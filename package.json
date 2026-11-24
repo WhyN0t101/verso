@@ -5,8 +5,10 @@
   "description": "A 3D bookshelf for your reading life.",
   "scripts": {
     "dev": "vite",
+    "worker": "wrangler dev",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "wrangler dev",
+    "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -20,6 +22,7 @@
     "@types/three": "^0.187.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.1"
+    "vitest": "^5.1.1",
+    "wrangler": "^4.168.0"
   }
 }

@@ -1,0 +1,220 @@
+import {mapGenre} from '../shared/genres';
+
+/**
+ * Cloudflare Worker: serves /api/search and /api/cover; everything else is static assets.
+ *   GET /api/search?q=dune          candidate books (Open Library search.json)
+ *   GET /api/search?work=OL893414W  summary + genre for one pick (Open Library works, then Google Books)
+ *   GET /api/cover?id=11481354      cover image from our own origin, numeric Open Library ids only
+ * GOOGLE_BOOKS_API_KEY is a Worker secret. When unset, the Google Books fallback is skipped.
+ */
+
+export interface Env {
+  ASSETS: {fetch(req: Request): Promise<Response>};
+  GOOGLE_BOOKS_API_KEY?: string;
+}
+export interface Ctx {
+  waitUntil(p: Promise<unknown>): void;
+}
+
+const OL = 'https://openlibrary.org';
+const USER_AGENT = 'Verso/0.1 (personal bookshelf app)';
+const MAX_SUMMARY = 500;
+const MAX_COVER_BYTES = 4 * 1024 * 1024;
+const COVER_SIZES = new Set(['S', 'M', 'L']);
+
+const CDN = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
+const CDN_SHORT = 'public, max-age=300, s-maxage=3600';
+const COVER_CC = 'public, max-age=604800, s-maxage=2592000, immutable';
+
+/* ---------- text helpers ---------- */
+
+/** Cuts at a sentence end when one falls in the back half, else at a word, adding an ellipsis. */
+export function truncate(s: string, max = MAX_SUMMARY): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  if (sentence > max * 0.5) return cut.slice(0, sentence + 1);
+  return cut.slice(0, cut.lastIndexOf(' ')).replace(/[\s,;:.]+$/, '') + '…';
+}
+
+/**
+ * Open Library descriptions are free text: plain strings or {value}, often with markdown links,
+ * "----------" separators and "([source][1])" tails. Returns a clean, length-capped summary.
+ */
+export function cleanDescription(raw: unknown): string {
+  let s = typeof raw === 'string' ? raw : raw && typeof raw === 'object' && typeof (raw as {value?: unknown}).value === 'string' ? (raw as {value: string}).value : '';
+  const tail = s.search(/\r?\n\s*(-{3,}|\*{3,}|_{3,})|\(\[?source\]?|\bAlso contained in\b|\bContains:|\bSee also:/i);
+  if (tail >= 0) s = s.slice(0, tail);
+  s = s
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return truncate(s);
+}
+
+/* ---------- http helpers ---------- */
+
+function json(body: unknown, status = 200, cacheControl = 'no-store'): Response {
+  return new Response(JSON.stringify(body), {status, headers: {'Content-Type': 'application/json', 'Cache-Control': cacheControl}});
+}
+
+async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
+  const r = await fetch(url, {headers: {'User-Agent': USER_AGENT, Accept: 'application/json'}, signal: AbortSignal.timeout(timeoutMs)});
+  if (!r.ok) throw new Error(`upstream ${r.status} for ${new URL(url).hostname}`);
+  return r.json();
+}
+
+/** Workers Cache API in front of an upstream call. Only 200s are stored; the response's Cache-Control sets the TTL. */
+async function withCache(keyUrl: string, ctx: Ctx, produce: () => Promise<Response>): Promise<Response> {
+  const cache = (caches as unknown as {default: Cache}).default;
+  const key = new Request(keyUrl, {method: 'GET'});
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const res = await produce();
+  if (res.status === 200) ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
+}
+
+/* ---------- /api/search ---------- */
+
+interface OlDoc {
+  key?: string;
+  title?: string;
+  author_name?: string[];
+  first_publish_year?: number;
+  subject?: string[];
+  cover_i?: number;
+}
+
+export interface SearchResult {
+  work: string;
+  title: string;
+  author: string;
+  year: number | null;
+  genre: string;
+  cover: string | null;
+}
+
+export interface WorkDetail {
+  summary: string;
+  genre: string;
+  source: 'openlibrary' | 'google' | null;
+}
+
+async function search(q: string): Promise<SearchResult[]> {
+  const fields = 'key,title,author_name,first_publish_year,subject,cover_i';
+  const data = (await getJson(`${OL}/search.json?q=${encodeURIComponent(q)}&limit=8&fields=${fields}`)) as {docs?: OlDoc[]};
+  const seen = new Set<string>();
+  const out: SearchResult[] = [];
+  for (const d of data.docs ?? []) {
+    const work = /^\/works\/(OL\d+W)$/.exec(d.key ?? '')?.[1];
+    if (!work || !d.title) continue;
+    const author = d.author_name?.[0] ?? '';
+    const dedupe = `${d.title.toLowerCase()}|${author.toLowerCase()}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push({
+      work,
+      title: d.title,
+      author,
+      year: d.first_publish_year ?? null,
+      genre: mapGenre(d.subject ?? []),
+      cover: d.cover_i ? `/api/cover?id=${d.cover_i}` : null,
+    });
+  }
+  return out;
+}
+
+async function googleSummary(title: string, author: string, key: string): Promise<string> {
+  const q = `intitle:${title}${author ? `+inauthor:${author}` : ''}`;
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q).replace(/%2B/g, '+')}&maxResults=3&printType=books&fields=items(volumeInfo(description))&key=${encodeURIComponent(key)}`;
+  const data = (await getJson(url)) as {items?: {volumeInfo?: {description?: string}}[]};
+  for (const it of data.items ?? []) {
+    const s = cleanDescription(it.volumeInfo?.description);
+    if (s) return s;
+  }
+  return '';
+}
+
+async function workDetail(id: string, title: string, author: string, googleKey: string | undefined): Promise<WorkDetail> {
+  const work = (await getJson(`${OL}/works/${id}.json`)) as {description?: unknown; subjects?: string[]};
+  const genre = mapGenre(work.subjects ?? []);
+  const summary = cleanDescription(work.description);
+  if (summary) return {summary, genre, source: 'openlibrary'};
+  // No key means no fallback, quietly: Open Library alone is a complete flow.
+  if (!googleKey || !title) return {summary: '', genre, source: null};
+  try {
+    const g = await googleSummary(title, author, googleKey);
+    return {summary: g, genre, source: g ? 'google' : null};
+  } catch (err) {
+    // Best effort: a Google outage or quota must not break adding a book.
+    console.warn('google books fallback failed', String(err));
+    return {summary: '', genre, source: null};
+  }
+}
+
+async function handleSearch(url: URL, env: Env, ctx: Ctx): Promise<Response> {
+  const work = url.searchParams.get('work') ?? '';
+  const q = (url.searchParams.get('q') ?? '').trim();
+  try {
+    if (work) {
+      if (!/^OL\d+W$/.test(work)) return json({error: 'bad work id'}, 400);
+      const title = (url.searchParams.get('title') ?? '').slice(0, 150);
+      const author = (url.searchParams.get('author') ?? '').slice(0, 100);
+      // Title and author only help the Google fallback, so they are left out of the cache key.
+      return await withCache(`${url.origin}/api/search?work=${work}`, ctx, async () => {
+        const d = await workDetail(work, title, author, env.GOOGLE_BOOKS_API_KEY);
+        // An empty summary is retried sooner, in case Google was only briefly unavailable.
+        return json(d, 200, d.summary ? CDN : CDN_SHORT);
+      });
+    }
+    if (q.length < 2 || q.length > 120) return json({error: 'q must be 2-120 characters'}, 400);
+    return await withCache(`${url.origin}/api/search?q=${encodeURIComponent(q.toLowerCase())}`, ctx, async () => json({results: await search(q)}, 200, CDN));
+  } catch (err) {
+    console.error('search failed', String(err));
+    return json({error: 'upstream unavailable'}, 502);
+  }
+}
+
+/* ---------- /api/cover ---------- */
+
+/** Only numeric Open Library ids are accepted, so this is not an open proxy. */
+async function handleCover(url: URL, ctx: Ctx): Promise<Response> {
+  const id = url.searchParams.get('id') ?? '';
+  const sizeParam = (url.searchParams.get('size') ?? '').toUpperCase();
+  const size = COVER_SIZES.has(sizeParam) ? sizeParam : 'L';
+  if (!/^\d{1,12}$/.test(id)) return json({error: 'bad cover id'}, 400);
+  try {
+    return await withCache(`${url.origin}/api/cover?id=${id}&size=${size}`, ctx, async () => {
+      // default=false makes Open Library answer 404 instead of a blank placeholder, so callers can fall back.
+      const r = await fetch(`https://covers.openlibrary.org/b/id/${id}-${size}.jpg?default=false`, {
+        headers: {'User-Agent': USER_AGENT},
+        signal: AbortSignal.timeout(8000),
+      });
+      const type = r.headers.get('content-type') ?? '';
+      if (r.status === 404 || !type.startsWith('image/')) return json({error: 'no cover'}, 404, 'public, s-maxage=3600');
+      if (!r.ok) throw new Error(`upstream ${r.status}`);
+      const buf = await r.arrayBuffer();
+      if (buf.byteLength > MAX_COVER_BYTES) return json({error: 'cover too large'}, 502);
+      return new Response(buf, {status: 200, headers: {'Content-Type': type, 'Cache-Control': COVER_CC}});
+    });
+  } catch (err) {
+    console.error('cover proxy failed', String(err));
+    return json({error: 'upstream unavailable'}, 502);
+  }
+}
+
+/* ---------- router ---------- */
+
+export default {
+  async fetch(req: Request, env: Env, ctx: Ctx): Promise<Response> {
+    const url = new URL(req.url);
+    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
+    if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', {status: 405, headers: {Allow: 'GET, HEAD'}});
+    if (url.pathname === '/api/search') return handleSearch(url, env, ctx);
+    if (url.pathname === '/api/cover') return handleCover(url, ctx);
+    return json({error: 'not found'}, 404);
+  },
+};

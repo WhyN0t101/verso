@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["src", "api", "shared", "tests", "vite.config.mts"]
+  "include": ["src", "shared", "tests", "vite.config.mts"]
 }

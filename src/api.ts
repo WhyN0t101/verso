@@ -1,4 +1,4 @@
-import type {SearchResult, WorkDetail} from '../api/search';
+import type {SearchResult, WorkDetail} from './worker';
 
 export type {SearchResult, WorkDetail};
 

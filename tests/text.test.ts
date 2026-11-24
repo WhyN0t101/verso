@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {cleanDescription, truncate} from '../api/_lib/text';
+import {cleanDescription, truncate} from '../src/worker';
 
 describe('cleanDescription', () => {
   it('accepts the {value} object form', () => {

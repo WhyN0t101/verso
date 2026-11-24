@@ -1,0 +1,2 @@
+# Local Worker secrets (copy to .dev.vars, which is gitignored)
+GOOGLE_BOOKS_API_KEY=
