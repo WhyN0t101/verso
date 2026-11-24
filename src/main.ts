@@ -11,6 +11,8 @@ import {initForm, openForm, closeForm, setGenreOptions} from './ui/form';
 import {initExport, openExport, closeExport} from './ui/exportDialog';
 import {renderList} from './ui/list';
 import {initDots, renderDots} from './ui/dots';
+import {createToneQueue} from './toneQueue';
+import {dominantTone, loadCover} from './covers';
 import {initStyle, openStyle, closeStyle, applyBackground} from './ui/style';
 import {buildBackup, mergeBooks, parseBackup} from './data/backup';
 
@@ -21,7 +23,7 @@ if (import.meta.env.DEV) {
   const n = Number(new URLSearchParams(location.search).get('books'));
   if (n > 0) {
     const {generateBooks} = await import('./dev/seedBooks');
-    state.books = generateBooks(Math.min(n, 1000));
+    state.books = generateBooks(Math.min(n, 1000), new URLSearchParams(location.search).has('covers'));
     state.seeded = false;
   }
 }
@@ -125,6 +127,19 @@ initForm((draft, editingId) => {
   setTimeout(() => select(b.id), 350);
 });
 
+// Books that have a cover but no stored tone (imports, old backups) get one in the background.
+let toneSave = 0;
+const tones = createToneQueue({
+  load: loadCover,
+  analyse: dominantTone,
+  concurrency: 1,
+  onTone(b) {
+    if (!state.books.includes(b)) return;
+    shelf?.retone(b);
+    clearTimeout(toneSave);
+    toneSave = window.setTimeout(persist, 1500);
+  },
+});
 initExport();
 initDots((i) => shelf?.focusCase(i));
 initStyle(() => shelf?.applySettings());
@@ -179,6 +194,7 @@ $<HTMLInputElement>('importFile').addEventListener('change', async (ev) => {
     showGroup();
     shelf?.applySettings();
     refresh();
+    tones.add(state.books);
     const skipped = parsed.skipped ? `, skipped ${parsed.skipped} unreadable` : '';
     toast(`Imported: ${merged.added} new, ${merged.updated} updated${skipped}.`);
   } catch (err) {
@@ -225,6 +241,11 @@ addEventListener('keydown', (ev) => {
     if (listMode) renderList(select);
   }
 });
+
+// After the first frames are on screen, so the queue never competes with startup.
+const startTones = (): void => tones.add(state.books);
+if ('requestIdleCallback' in window) requestIdleCallback(startTones, {timeout: 3000});
+else setTimeout(startTones, 1500);
 
 // Without WebGL the flat list is the whole app.
 setListMode(!shelf);

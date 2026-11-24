@@ -1,4 +1,5 @@
 import {describe, expect, it} from 'vitest';
+import {paletteOf} from '../src/textures/draw';
 import {buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
 import {makeBook, sanitizeBook} from '../src/data/books';
 import {DEFAULT_SETTINGS, sanitizeSettings} from '../src/data/settings';
@@ -83,5 +84,21 @@ describe('groupByGenre setting', () => {
   it('round trips through a backup', () => {
     const parsed = parseBackup(buildBackup([book('G')], {...DEFAULT_SETTINGS, groupByGenre: true}));
     expect(parsed.settings?.groupByGenre).toBe(true);
+  });
+});
+
+describe('stored tone', () => {
+  it('round trips through a backup and drives the spine palette', () => {
+    const b = book('Toned');
+    b.tone = {h: 200, s: 50, l: 40};
+    const back = parseBackup(buildBackup([b], DEFAULT_SETTINGS)).books[0]!;
+    expect(back.tone).toEqual({h: 200, s: 50, l: 40});
+    expect(paletteOf(back)).toEqual({h: 200, s: 50});
+  });
+  it('is optional: an older backup imports and falls back to the title hue', () => {
+    const old = JSON.stringify({app: 'verso', version: 1, books: [{title: 'Old', cover: '/api/cover?id=5', hue: 77}]});
+    const b = parseBackup(old).books[0]!;
+    expect(b.tone).toBeUndefined();
+    expect(paletteOf(b).h).toBe(77);
   });
 });

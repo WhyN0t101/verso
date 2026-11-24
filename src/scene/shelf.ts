@@ -26,6 +26,8 @@ export interface Shelf {
   focusBook(id: string): void;
   /** Pan to the bookcase of the first book matching the current search and filter, if any. */
   revealMatch(): void;
+  /** The book's stored tone changed: recolour its spine and rebuild its textures, without rebuilding the shelf. */
+  retone(b: Book): void;
   /** Pan to a bookcase by index. */
   focusCase(index: number): void;
   setVisible(on: boolean): void;
@@ -294,6 +296,41 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     });
   }
 
+  /** Flat colours of the cover, back board and spine before (or without) a texture. */
+  const faceColors = (p: ReturnType<typeof paletteOf>): [THREE.Color, THREE.Color, THREE.Color] => [
+    new THREE.Color(hsl(p.h, sat(p, 0), 28)),
+    new THREE.Color(hsl(p.h, sat(p, 0), 22)),
+    new THREE.Color(hsl(p.h, sat(p, 4), 25)),
+  ];
+
+  function retone(b: Book): void {
+    const e = entries.get(b.id);
+    if (!e) return;
+    const prefix = `${b.id}:${b.v}:`;
+    for (const [k, t] of texCache) {
+      if (k.startsWith(prefix)) {
+        t.dispose();
+        texCache.delete(k);
+        realCovers.delete(k);
+      }
+    }
+    b.v++;
+    const [cover, back, spine] = faceColors(paletteOf(b));
+    e.base[MAT.cover]?.copy(cover);
+    e.base[MAT.back]?.copy(back);
+    e.base[MAT.spine]?.copy(spine);
+    for (const i of [MAT.cover, MAT.spine]) {
+      const m = e.mats[i];
+      if (m) {
+        m.map = null;
+        m.needsUpdate = true;
+      }
+    }
+    e.hasSpine = false;
+    e.hasCover = false;
+    force = true;
+  }
+
   function buildShelf(): void {
     force = true;
     filterKey = '';
@@ -333,11 +370,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         const pages = () => new THREE.MeshStandardMaterial({color: 0xe9dfc8, roughness: 0.95});
         // Order follows BoxGeometry faces: +x cover, -x back board, +y, -y, +z spine, -z.
         const mats = [
-          new THREE.MeshStandardMaterial({color: new THREE.Color(hsl(p.h, sat(p, 0), 28)), roughness: 0.6}),
-          new THREE.MeshStandardMaterial({color: new THREE.Color(hsl(p.h, sat(p, 0), 22)), roughness: 0.7}),
+          new THREE.MeshStandardMaterial({color: faceColors(p)[0], roughness: 0.6}),
+          new THREE.MeshStandardMaterial({color: faceColors(p)[1], roughness: 0.7}),
           pages(),
           pages(),
-          new THREE.MeshStandardMaterial({color: new THREE.Color(hsl(p.h, sat(p, 4), 25)), roughness: 0.55}),
+          new THREE.MeshStandardMaterial({color: faceColors(p)[2], roughness: 0.55}),
           pages(),
         ];
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mats);
@@ -630,6 +667,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const c = wall.caseOf.get(id);
       if (c !== undefined) panTarget = caseX(c, pitch);
     },
+    retone,
     focusCase(index) {
       panTarget = caseX(clampCase(index, wall.cases.length), pitch);
     },
