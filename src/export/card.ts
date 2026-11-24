@@ -21,7 +21,7 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   const acc = theme.accent(b);
   const pad = 84;
   g.textBaseline = 'alphabetic';
-  g.font = `600 24px ${SANS}`;
+  g.font = `500 24px ${SANS}`;
   letterSpacing(g, 6);
   g.fillStyle = acc;
   g.textAlign = 'left';

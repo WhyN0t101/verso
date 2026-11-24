@@ -1,8 +1,9 @@
 import type {Book} from '../types';
 import {TAU, clamp, hsl} from '../util';
 
-export const SERIF = '"Playfair Display",Georgia,serif';
-export const SANS = 'Inter,system-ui,sans-serif';
+/** Literata: what a person wrote or a book owns (titles, notes, signage). Atkinson Hyperlegible Next: small interface text. */
+export const SERIF = 'Literata,Georgia,serif';
+export const SANS = '"Atkinson Hyperlegible Next",system-ui,sans-serif';
 export const CREAM = '#f6ead4';
 
 /** Base hue and saturation for a book: from its cover when it has one, else from the title hash. */
@@ -175,7 +176,7 @@ export function drawCover(b: Book, W: number, H: number): HTMLCanvasElement {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillStyle = acc;
-  g.font = `600 ${W * 0.045}px ${SANS}`;
+  g.font = `500 ${W * 0.045}px ${SANS}`;
   setLS(g, W * 0.01);
   g.fillText(b.genre.toUpperCase(), W / 2, H * 0.1, W * 0.8);
   setLS(g, 0);
