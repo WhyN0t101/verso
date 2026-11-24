@@ -10,6 +10,7 @@ export interface WoodPreset {
 }
 
 export const WOODS: Record<WoodId, WoodPreset> = {
+  honey: {label: 'Honey oak', base: '#b9824a', dark: '92,56,24', light: '236,192,132'},
   walnut: {label: 'Walnut', base: '#5b3b25', dark: '25,12,5', light: '150,100,60'},
   oak: {label: 'Oak', base: '#a37a4b', dark: '70,42,18', light: '215,176,120'},
   ebony: {label: 'Ebony', base: '#2a211c', dark: '8,5,4', light: '90,72,60'},
@@ -30,6 +31,7 @@ export interface LightPreset {
 
 /** Intensities are in the prototype's units; the scene multiplies by pi for current three. */
 export const LIGHTS: Record<LightId, LightPreset> = {
+  lamplit: {label: 'Lamplit', hemiSky: 0xfff1de, hemiGround: 0x3a4f54, hemi: 1.1, key: 1.05, keyColor: 0xffdca6, fill: 0.24, fillColor: 0x9fc6ce},
   warm: {label: 'Warm', hemiSky: 0xfff0dc, hemiGround: 0x2b1e14, hemi: 0.9, key: 0.85, keyColor: 0xffe3bd, fill: 0.16, fillColor: 0x9fb4ff},
   neutral: {label: 'Neutral', hemiSky: 0xffffff, hemiGround: 0x30303a, hemi: 0.95, key: 0.85, keyColor: 0xffffff, fill: 0.2, fillColor: 0xcfd8ff},
   evening: {label: 'Evening', hemiSky: 0xffb98a, hemiGround: 0x1a1220, hemi: 0.5, key: 1.0, keyColor: 0xff9a52, fill: 0.22, fillColor: 0x6a7bd6},
@@ -43,6 +45,7 @@ export interface BackgroundPreset {
 }
 
 export const BACKGROUNDS: BackgroundPreset[] = [
+  {id: 'study', label: 'Study', css: 'radial-gradient(ellipse at 50% 28%,#2a4348 0%,#18272b 58%,#0f1a1d 100%)'},
   {id: 'ember', label: 'Ember', css: 'radial-gradient(ellipse at 50% 30%,#4a3322 0%,#24170f 55%,#0f0a07 100%)'},
   {id: 'midnight', label: 'Midnight', css: 'radial-gradient(ellipse at 50% 30%,#26385f 0%,#121a30 55%,#070a14 100%)'},
   {id: 'forest', label: 'Forest', css: 'radial-gradient(ellipse at 50% 30%,#2f4a36 0%,#16261b 55%,#080f0a 100%)'},

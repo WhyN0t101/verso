@@ -29,6 +29,7 @@
   <button id="selectMenu">Select books</button>
   <button id="groupToggle">Group by genre: off</button>
   <button id="openStyle">Style the shelf</button>
+  <button id="resetLook">Reset appearance</button>
   <button id="exportBackup">Export backup (JSON)</button>
   <button id="importBackup">Import backup</button>
   <input id="importFile" type="file" accept="application/json,.json" class="hidden">
@@ -121,6 +122,8 @@
 <div class="overlay hidden" id="style">
   <div class="card" id="stCard">
     <h2>Style the shelf</h2>
+    <label>Look</label>
+    <div class="opts" id="stLook"><button type="button" class="opt" id="stStudy"><span class="swatch" id="stStudySwatch"></span>Study</button></div>
     <label>Wood finish</label>
     <div class="opts" id="stWood"></div>
     <label>Lighting</label>

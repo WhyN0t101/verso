@@ -163,3 +163,14 @@ describe('changing a cover', () => {
     expect(b).not.toHaveProperty('tone');
   });
 });
+
+describe('appearance', () => {
+  it('defaults to the Study look but keeps whatever was saved', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({wood: 'honey', light: 'lamplit', background: {kind: 'preset', id: 'study'}});
+    const saved = sanitizeSettings({wood: 'ebony', light: 'bright', background: {kind: 'preset', id: 'forest'}});
+    expect(saved).toMatchObject({wood: 'ebony', light: 'bright', background: {kind: 'preset', id: 'forest'}});
+  });
+  it('falls back to the Study look for unknown values', () => {
+    expect(sanitizeSettings({wood: 'plastic', light: 'strobe', background: {kind: 'preset', id: 'nope'}})).toMatchObject({wood: 'honey', light: 'lamplit', background: {id: 'study'}});
+  });
+});

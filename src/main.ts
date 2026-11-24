@@ -15,7 +15,7 @@ import {enterSelect, exitSelect, initSelect, togglePick} from './ui/selectMode';
 import {removeBooks, restoreBooks} from './data/bulk';
 import {createToneQueue} from './toneQueue';
 import {dominantTone, loadCover} from './covers';
-import {initStyle, openStyle, closeStyle, applyBackground} from './ui/style';
+import {initStyle, openStyle, closeStyle, applyBackground, applyStudy} from './ui/style';
 import {buildBackup, mergeBooks, parseBackup} from './data/backup';
 
 await fontsReady;
@@ -186,6 +186,13 @@ $('menuBtn').addEventListener('click', (ev) => {
 menu.addEventListener('click', () => setMenu(false));
 document.addEventListener('click', () => setMenu(false));
 $('openStyle').addEventListener('click', openStyle);
+$('resetLook').addEventListener('click', () => {
+  applyStudy(state.settings);
+  persist();
+  applyBackground(state.settings.background);
+  shelf?.applySettings();
+  toast('Appearance reset to Study.');
+});
 const showGroup = (): void => {
   $('groupToggle').textContent = `Group by genre: ${state.settings.groupByGenre ? 'on' : 'off'}`;
 };

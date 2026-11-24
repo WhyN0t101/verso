@@ -2,6 +2,7 @@ import type {LightId, Settings, WoodId} from '../types';
 import {state, persist} from '../state';
 import {$, toast} from '../util';
 import {BACKGROUNDS, LIGHTS, WOODS, imageBackgroundCss} from '../presets';
+import {STUDY} from '../data/settings';
 
 const MAX_IMAGE_SIDE = 1600;
 
@@ -45,12 +46,21 @@ function renderGroups(): void {
   const wood = $('stWood');
   const light = $('stLight');
   const bg = $('stBg');
+  $('stStudySwatch').style.background = BACKGROUNDS.find((b) => b.id === 'study')?.css ?? '';
+  $('stStudy').classList.toggle('on', s.wood === STUDY.wood && s.light === STUDY.light && s.background.kind === 'preset' && s.background.id === STUDY.background.id);
   [wood, light, bg].forEach((g) => g.replaceChildren());
   for (const [id, w] of Object.entries(WOODS)) option(wood, id, w.label, w.base, s.wood === id);
   for (const [id, l] of Object.entries(LIGHTS)) option(light, id, l.label, `#${l.keyColor.toString(16).padStart(6, '0')}`, s.light === id);
   for (const b of BACKGROUNDS) option(bg, b.id, b.label, b.css, s.background.kind === 'preset' && s.background.id === b.id);
   if (s.background.kind === 'image') option(bg, 'image', 'Your image', `url("${s.background.data}") center / cover`, true);
   $('stRemoveImg').classList.toggle('hidden', s.background.kind !== 'image');
+}
+
+/** Applies the named Study look to wood, light and background. Grouping and everything else stay as they are. */
+export function applyStudy(s: Settings): void {
+  s.wood = STUDY.wood;
+  s.light = STUDY.light;
+  s.background = {...STUDY.background};
 }
 
 export function initStyle(onSettingsChange: () => void): void {
@@ -74,7 +84,8 @@ export function initStyle(onSettingsChange: () => void): void {
     // Picking the "Your image" swatch again is a no-op; presets replace the image until a new upload.
     if (id && id !== 'image') change((s) => (s.background = {kind: 'preset', id}));
   });
-  $('stRemoveImg').addEventListener('click', () => change((s) => (s.background = {kind: 'preset', id: 'ember'})));
+  $('stRemoveImg').addEventListener('click', () => change((s) => (s.background = {...STUDY.background})));
+  $('stStudy').addEventListener('click', () => change(applyStudy));
   $<HTMLInputElement>('stUpload').addEventListener('change', async (ev) => {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];

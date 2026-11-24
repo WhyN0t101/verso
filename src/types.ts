@@ -40,8 +40,8 @@ export interface BookDraft {
   aspect?: number;
 }
 
-export type WoodId = 'walnut' | 'oak' | 'ebony' | 'maple' | 'cherry';
-export type LightId = 'warm' | 'neutral' | 'evening' | 'bright';
+export type WoodId = 'honey' | 'walnut' | 'oak' | 'ebony' | 'maple' | 'cherry';
+export type LightId = 'lamplit' | 'warm' | 'neutral' | 'evening' | 'bright';
 export type Background = {kind: 'preset'; id: string} | {kind: 'image'; data: string};
 
 export interface Settings {
