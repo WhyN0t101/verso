@@ -1,4 +1,5 @@
 import {describe, expect, it} from 'vitest';
+import {tintFor} from '../src/scene/tint';
 import {largeCover} from '../src/covers';
 import {cardQuote, fitCover, type FitInput} from '../src/export/layout';
 import {THEMES, themeById} from '../src/export/themes';
@@ -40,5 +41,17 @@ describe('largeCover', () => {
   it('adds or replaces the size parameter', () => {
     expect(largeCover('/api/cover?id=1')).toBe('/api/cover?id=1&size=L');
     expect(largeCover('/api/cover?id=1&size=M')).toBe('/api/cover?id=1&size=L');
+  });
+});
+
+describe('tintFor', () => {
+  const base = {isSelected: false, anySelected: false, filtering: false, matches: true};
+  it('leaves books alone when nothing is selected or filtered', () => expect(tintFor(base)).toBe(0xffffff));
+  it('dims books that miss the filter, and everything behind a pulled-out book', () => {
+    expect(tintFor({...base, filtering: true, matches: false})).toBe(0x4d4740);
+    expect(tintFor({...base, anySelected: true})).toBe(0x5e564d);
+  });
+  it('never dims the pulled-out book, even when it misses the filter', () => {
+    expect(tintFor({isSelected: true, anySelected: true, filtering: true, matches: false})).toBe(0xffffff);
   });
 });

@@ -5,8 +5,9 @@ import {matches} from '../search';
 import {clamp, hsl, rng} from '../util';
 import {LIGHTS, WOODS, type WoodPreset} from '../presets';
 import {SERIF, drawCover, paletteOf, sat, spineCanvas} from '../textures/draw';
-import {loadCover} from '../covers';
+import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
+import {tintFor} from './tint';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
 export interface ShelfHooks {
@@ -79,6 +80,10 @@ const NARROW_BAR_PX = 64;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
 const LIGHT_UNIT = Math.PI;
 const MAT = {cover: 0, back: 1, spine: 4} as const;
+// The cover face gets part of its brightness from the picture itself (emissive) so the lamp's warmth and
+// angle cannot wash it out: albedo * light + glow comes to about the picture's own brightness.
+const FACE_ALBEDO = 0.4;
+const FACE_GLOW = 0.72;
 
 const ease = (dt: number, r: number) => 1 - Math.exp(-dt * r);
 const isMobile = () => innerWidth <= 760;
@@ -297,13 +302,21 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     e.hasSpine = true;
     force = true;
   }
+  /** Puts a picture on a cover-face material, with the glow that keeps it true to the picture. */
+  function faceLook(m: THREE.MeshStandardMaterial, tex: THREE.Texture): void {
+    m.map = tex;
+    m.emissiveMap = tex;
+    m.emissive.setHex(0xffffff);
+    m.emissiveIntensity = FACE_GLOW;
+    m.needsUpdate = true;
+  }
+
   /** The cover face only shows on the pulled-out book, so its texture is made on first selection. */
   function applyCover(e: Entry): void {
     const m = e.mats[MAT.cover];
     if (!m) return;
-    m.map = getTex(e.b, 'cover');
-    m.needsUpdate = true;
-    e.base[MAT.cover]?.set(0xffffff);
+    faceLook(m, getTex(e.b, 'cover'));
+    e.base[MAT.cover]?.setScalar(FACE_ALBEDO);
     e.hasCover = true;
     force = true;
     const b = e.b;
@@ -312,19 +325,28 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     realCovers.add(k);
     const ctl = (e.coverCtl = new AbortController());
     e.coverPending = true;
-    // The generated cover shows immediately; the real one replaces it when it arrives.
-    void loadCover(b.cover, {signal: ctl.signal}).then((img) => {
-      e.coverPending = false;
-      if (!img || !texCache.has(k)) return;
+    // The generated cover shows immediately. The medium cover fades in over it, then the large one over that.
+    const show = (img: HTMLImageElement): void => {
+      if (!texCache.has(k) || entries.get(b.id) !== e) return;
       const t = new THREE.Texture(img);
       t.colorSpace = THREE.SRGBColorSpace;
       t.anisotropy = maxAniso;
       t.needsUpdate = true;
-      const generated = texCache.get(k);
+      const previous = texCache.get(k);
       texCache.set(k, t);
-      if (entries.get(b.id) === e) startFade(e, t, generated);
-      else generated?.dispose();
-    });
+      startFade(e, t, previous);
+    };
+    void loadCover(b.cover, {signal: ctl.signal})
+      .then((img) => {
+        if (img) show(img);
+        return loadCover(largeCover(b.cover as string), {signal: ctl.signal});
+      })
+      .then((img) => {
+        if (img) show(img);
+      })
+      .finally(() => {
+        e.coverPending = false;
+      });
   }
 
   /** Flat colours of the cover, back board and spine before (or without) a texture. */
@@ -354,6 +376,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const m = e.mats[i];
       if (m) {
         m.map = null;
+        m.emissiveMap = null;
+        m.emissive.setHex(0x000000);
+        m.emissiveIntensity = 0;
         m.needsUpdate = true;
       }
     }
@@ -362,7 +387,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     force = true;
   }
 
-  /** The real cover fades in over the generated one instead of popping in. */
   interface Fade {
     e: Entry;
     plane: THREE.Mesh;
@@ -375,8 +399,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   const FADE_S = 0.4;
 
   function startFade(e: Entry, tex: THREE.Texture, generated: THREE.Texture | undefined): void {
+    // A newer cover arriving mid-fade: let the running one finish at once so two overlays never stack.
+    for (const f of [...fades]) if (f.e === e) endFade(f);
     const host = e.grp.children[0] as THREE.Mesh;
-    const mat = new THREE.MeshStandardMaterial({map: tex, roughness: 0.6, transparent: true, opacity: 0, depthWrite: false});
+    const mat = new THREE.MeshStandardMaterial({map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: FACE_GLOW, roughness: 0.6, transparent: true, opacity: 0, depthWrite: false});
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(e.b.d, e.b.h), mat);
     // Same orientation as the box's +x face, a hair in front of it.
     plane.rotation.y = Math.PI / 2;
@@ -393,10 +419,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     f.mat.dispose();
     // The box face takes over the real texture; the generated one is no longer shown anywhere.
     const m = f.e.mats[MAT.cover];
-    if (m && entries.get(f.e.b.id) === f.e) {
-      m.map = f.tex;
-      m.needsUpdate = true;
-    }
+    if (m && entries.get(f.e.b.id) === f.e) faceLook(m, f.tex);
     f.generated?.dispose();
     force = true;
   }
@@ -742,10 +765,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       if (picked !== e.picked) {
         e.picked = picked;
         // A warm glow on every face marks the books chosen in Select mode.
-        for (const m of e.mats) {
+        e.mats.forEach((m, i) => {
+          if (i === MAT.cover) return; // the cover face keeps its own glow
           m.emissive.setHex(picked ? 0xe2b36b : 0x000000);
           m.emissiveIntensity = picked ? 0.45 : 0;
-        }
+        });
         moved++;
       }
       const p = e.grp.position;
@@ -794,9 +818,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         moved++;
         shadowDirty = true;
       }
-      let tint = 0xffffff;
-      if (sel && !isSel) tint = 0x5e564d;
-      else if (filtering && !match) tint = 0x4d4740;
+      const tint = tintFor({isSelected: isSel, anySelected: !!sel, filtering, matches: match});
       tmpC.setHex(tint);
       const diff = Math.abs(e.tint.r - tmpC.r) + Math.abs(e.tint.g - tmpC.g) + Math.abs(e.tint.b - tmpC.b);
       if (diff === 0) return;
@@ -809,7 +831,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     for (const f of fades) {
       f.t += dt / FADE_S;
       f.mat.opacity = Math.min(f.t, 1);
-      f.mat.color.copy(f.e.tint);
+      f.mat.color.copy(f.e.base[MAT.cover] ?? f.e.tint).multiply(f.e.tint);
       moved++;
       if (f.t >= 1 || entries.get(f.e.b.id) !== f.e) endFade(f);
     }
@@ -826,6 +848,27 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   if (import.meta.env.DEV) {
     // Lets the screenshot harness click a book without guessing pixel positions.
     (window as unknown as {__verso: unknown}).__verso = {
+      /** Renders once and returns the canvas as a data URL, so tests can read real pixels. */
+      snapshot: () => {
+        renderer.render(scene, camera);
+        return canvas.toDataURL('image/png');
+      },
+      project(x: number, y: number, z: number) {
+        const v = new THREE.Vector3(x, y, z).project(camera);
+        return {x: ((v.x + 1) / 2) * innerWidth, y: ((1 - v.y) / 2) * innerHeight};
+      },
+      selectedFace() {
+        const e = state.sel ? entries.get(state.sel) : undefined;
+        if (!e) return null;
+        const p = e.grp.position;
+        const sc = e.grp.scale.x;
+        const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => {
+          const w = new THREE.Vector3(e.b.w / 2, (b as number) * e.b.h / 2, (a as number) * e.b.d / 2).applyEuler(e.grp.rotation).multiplyScalar(sc).add(p);
+          const v = w.project(camera);
+          return {x: ((v.x + 1) / 2) * innerWidth, y: ((1 - v.y) / 2) * innerHeight};
+        });
+        return corners;
+      },
       stats: () => ({...renderer.info.render, textures: renderer.info.memory.textures}),
       bookScreenPos(i: number) {
         const e = [...entries.values()][i];
