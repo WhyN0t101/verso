@@ -63,3 +63,9 @@ h3{font:600 11px Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;
 .list-meta{grid-column:1;color:var(--mute)}
 .list-stars{grid-row:1/3;grid-column:2;color:var(--acc);align-self:center}
 .list-empty{color:var(--mute);text-align:center;margin-top:40px}
+.status{font-size:13px;color:var(--mute);margin:8px 0 0}
+.results{list-style:none;margin:8px 0 0;padding:4px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.04);max-height:210px;overflow:auto}
+.results button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:8px 10px;color:var(--ink);font:400 14px Inter,sans-serif;cursor:pointer}
+.results button:hover,.results button:focus-visible{background:rgba(255,255,255,.1);outline:none}
+.res-title{font:700 15px "Playfair Display",Georgia,serif}
+.res-meta{color:var(--mute);font-size:13px}

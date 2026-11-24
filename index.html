@@ -44,6 +44,10 @@
 <div class="overlay hidden" id="modal">
   <form class="card" id="form" autocomplete="off">
     <h2 id="formTitle">Add a book</h2>
+    <label for="fSearch">Find on Open Library</label>
+    <input id="fSearch" type="search" placeholder="Start typing a title or author" autocomplete="off">
+    <p id="fStatus" class="status hidden" role="status"></p>
+    <ul id="fResults" class="results hidden"></ul>
     <label for="fTitle">Title</label>
     <input id="fTitle" required maxlength="90">
     <label for="fAuthor">Author</label>
