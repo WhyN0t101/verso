@@ -6,11 +6,14 @@ import {clamp, hsl, rng} from '../util';
 import {LIGHTS, WOODS, type WoodPreset} from '../presets';
 import {drawCover, paletteOf, sat, spineCanvas} from '../textures/draw';
 import {loadCover} from '../covers';
+import {CASE_ROWS, caseX, clampCase, firstMatchCase, layoutWall, nearestCase, snapCase, type Wall} from './wall';
 
 export interface ShelfHooks {
   /** Book id picked by a click, or null for a click on empty space. */
   onPick(id: string | null): void;
   onHover(title: string | null, x: number, y: number): void;
+  /** The bookcase the camera is heading for changed, or the wall itself did (labels are genre names when grouped). */
+  onView(index: number, labels: (string | null)[]): void;
 }
 
 export interface Shelf {
@@ -18,8 +21,12 @@ export interface Shelf {
   applySettings(): void;
   /** Rebuild geometry from state.books (add, edit, delete). */
   rebuild(): void;
-  /** Pan to the last row, where a newly added book sits. */
-  scrollToEnd(): void;
+  /** Pan to the bookcase holding this book. */
+  focusBook(id: string): void;
+  /** Pan to the bookcase of the first book matching the current search and filter, if any. */
+  revealMatch(): void;
+  /** Pan to a bookcase by index. */
+  focusCase(index: number): void;
   setVisible(on: boolean): void;
 }
 
@@ -32,6 +39,7 @@ interface Entry {
   tint: THREE.Color;
   hasSpine: boolean;
   hasCover: boolean;
+  caseIndex: number;
   /** Result of the search and status filter, refreshed only when they change. */
   match: boolean;
 }
@@ -139,9 +147,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let Htot = 0;
   let Wtot = 0;
   let camDist = 12;
+  /** Horizontal camera position along the wall, current and target. */
   let panTarget = 0;
   let panCur = 0;
-  let panRange = 0;
+  let panMax = 0;
+  let pitch = 5;
+  let wall: Wall = layoutWall([], 4.2, false);
+  let shadowCase = -1;
+  let viewKey = '';
   let hover: string | null = null;
   let visible = true;
   const entries = new Map<string, Entry>();
@@ -250,32 +263,28 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     clearFrame();
     clearBooks();
     pruneTextures();
+    const keepCase = nearestCase(panTarget, pitch, wall.cases.length);
     innerW = WIDTHS[bucket < 0 ? 1 : bucket] ?? 4.2;
-    const minRows = bucket === 0 ? 4 : 3;
-    const rowsArr: {b: Book; x: number}[][] = [[]];
-    let x = 0;
-    for (const b of state.books) {
-      let row = rowsArr[rowsArr.length - 1] as {b: Book; x: number}[];
-      if (x + b.w > innerW - 0.12 && row.length) {
-        row = [];
-        rowsArr.push(row);
-        x = 0;
-      }
-      row.push({b, x});
-      x += b.w + 0.025;
-    }
-    const R = Math.max(minRows, rowsArr.length);
+    wall = layoutWall(state.books, innerW, false);
+    const R = CASE_ROWS;
     Hs = R * ROW_H + BOARD;
     Wtot = innerW + 2 * SIDE;
     Htot = Hs + 0.55;
-    frame.add(box(SIDE, Hs, DEPTH, woodMat, -(innerW / 2 + SIDE / 2), 0, 0));
-    frame.add(box(SIDE, Hs, DEPTH, woodMat, innerW / 2 + SIDE / 2, 0, 0));
-    frame.add(box(Wtot, Hs, 0.08, backMat, 0, 0, -DEPTH / 2 + 0.04));
-    for (let i = 0; i <= R; i++) frame.add(box(innerW, BOARD, DEPTH, woodMat, 0, -Hs / 2 + BOARD / 2 + i * ROW_H, 0));
-    frame.add(box(Wtot + 0.24, 0.16, DEPTH + 0.12, woodMat, 0, Hs / 2 + 0.08, 0.03));
-    frame.add(box(Wtot + 0.12, 0.3, DEPTH + 0.06, woodMat, 0, -Hs / 2 - 0.15, 0.02));
-    rowsArr.forEach((row, k) => {
+    const oldPitch = pitch;
+    pitch = Wtot + 0.24;
+    for (const c of wall.cases) {
+      const ox = caseX(c.index, pitch);
+      frame.add(box(SIDE, Hs, DEPTH, woodMat, ox - (innerW / 2 + SIDE / 2), 0, 0));
+      frame.add(box(SIDE, Hs, DEPTH, woodMat, ox + innerW / 2 + SIDE / 2, 0, 0));
+      frame.add(box(Wtot, Hs, 0.08, backMat, ox, 0, -DEPTH / 2 + 0.04));
+      for (let i = 0; i <= R; i++) frame.add(box(innerW, BOARD, DEPTH, woodMat, ox, -Hs / 2 + BOARD / 2 + i * ROW_H, 0));
+      frame.add(box(Wtot + 0.24, 0.16, DEPTH + 0.12, woodMat, ox, Hs / 2 + 0.08, 0.03));
+      frame.add(box(Wtot + 0.12, 0.3, DEPTH + 0.06, woodMat, ox, -Hs / 2 - 0.15, 0.02));
+    }
+    if (pitch !== oldPitch) panTarget = panCur = caseX(keepCase, pitch);
+    wall.cases.forEach((c) => c.rows.forEach((row, k) => {
       const i = R - 1 - k;
+      const ox = caseX(c.index, pitch);
       const floor = -Hs / 2 + BOARD + i * ROW_H;
       for (const {b, x: bx} of row) {
         const p = paletteOf(b);
@@ -294,7 +303,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         mesh.userData = {id: b.id, mats};
         const grp = new THREE.Group();
         grp.add(mesh);
-        const home = new THREE.Vector3(-innerW / 2 + 0.06 + bx + b.w / 2, floor + b.h / 2, -DEPTH / 2 + 0.1 + b.d / 2);
+        const home = new THREE.Vector3(ox - innerW / 2 + 0.06 + bx + b.w / 2, floor + b.h / 2, -DEPTH / 2 + 0.1 + b.d / 2);
         grp.position.copy(home);
         const pv = prev.get(b.id);
         if (pv) {
@@ -303,13 +312,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           grp.scale.setScalar(pv.s);
         }
         bookRoot.add(grp);
-        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, match: true});
+        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, match: true});
         pickables.push(mesh);
       }
-    });
-    key.position.set(-5, Hs * 0.1 + 9, 13);
-    key.target.position.set(0, 0, 0);
-    const ext = Math.max(Hs, Wtot) / 2 + 2;
+    }));
+    viewKey = '';
+    shadowCase = -1;
+    // The shadow map covers five cases around the camera and is re-aimed when the nearest case changes.
+    const ext = Math.max(Hs, 5 * pitch) / 2 + 1;
     Object.assign(key.shadow.camera, {left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: 45});
     key.shadow.camera.updateProjectionMatrix();
     placeCamera(prev.size === 0);
@@ -317,14 +327,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   function placeCamera(initial: boolean): void {
     const aspect = innerWidth / innerHeight;
-    const fitH = Math.min(Htot, ROW_H * 4.3);
-    camDist = Math.max(fitH / 2 / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.1 + DEPTH / 2;
-    panRange = Math.max(0, (Htot - fitH) / 2);
-    if (initial) {
-      panTarget = panRange;
-      panCur = panRange;
-    }
-    panTarget = clamp(panTarget, -panRange, panRange);
+    camDist = Math.max(Htot / 2 / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.1 + DEPTH / 2;
+    panMax = (wall.cases.length - 1) * pitch;
+    if (initial) panTarget = panCur = 0;
+    panTarget = clamp(panTarget, 0, panMax);
   }
 
   function onResize(): void {
@@ -373,19 +379,25 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const hit = ray.intersectObjects(pickables, false)[0];
     return hit ? (hit.object.userData.id as string) : null;
   }
-  let down: {x: number; y: number; ly: number; moved: number} | null = null;
+  let down: {x: number; y: number; lx: number; lt: number; vx: number; moved: number} | null = null;
   canvas.addEventListener('pointerdown', (ev) => {
-    down = {x: ev.clientX, y: ev.clientY, ly: ev.clientY, moved: 0};
+    down = {x: ev.clientX, y: ev.clientY, lx: ev.clientX, lt: ev.timeStamp, vx: 0, moved: 0};
     canvas.setPointerCapture(ev.pointerId);
   });
   canvas.addEventListener('pointermove', (ev) => {
     pointer.x = (ev.clientX / innerWidth) * 2 - 1;
     pointer.y = (ev.clientY / innerHeight) * 2 - 1;
     if (down) {
-      const dy = ev.clientY - down.ly;
-      down.ly = ev.clientY;
+      const dx = ev.clientX - down.lx;
+      const dt = Math.max(ev.timeStamp - down.lt, 1);
+      down.lx = ev.clientX;
+      down.lt = ev.timeStamp;
       down.moved = Math.max(down.moved, Math.hypot(ev.clientX - down.x, ev.clientY - down.y));
-      if (down.moved > 6 && panRange > 0) panTarget = clamp(panTarget + dy * ((2 * camDist * FOV_T) / innerHeight), -panRange, panRange);
+      if (down.moved > 6 && panMax > 0) {
+        const dw = -dx * ((2 * camDist * FOV_T) / innerHeight);
+        panTarget = clamp(panTarget + dw, 0, panMax);
+        down.vx = down.vx * 0.6 + (dw / dt) * 0.4;
+      }
       return;
     }
     if (state.sel || ev.pointerType === 'touch') return;
@@ -397,9 +409,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   });
   canvas.addEventListener('pointerup', (ev) => {
     if (!down) return;
-    const moved = down.moved;
+    const {moved, vx} = down;
     down = null;
     if (moved < 6) hooks.onPick(pick(ev));
+    // Touch swipes settle on a bookcase; a mouse drag stays where it was let go.
+    else if (ev.pointerType !== 'mouse' && panMax > 0) panTarget = caseX(snapCase(panTarget, vx, pitch, wall.cases.length), pitch);
   });
   canvas.addEventListener('pointercancel', () => {
     down = null;
@@ -412,9 +426,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   canvas.addEventListener(
     'wheel',
     (ev) => {
-      if (panRange > 0) {
+      if (panMax > 0) {
         ev.preventDefault();
-        panTarget = clamp(panTarget - ev.deltaY * 0.01, -panRange, panRange);
+        const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
+        panTarget = clamp(panTarget + d * 0.012, 0, panMax);
       }
     },
     {passive: false},
@@ -423,13 +438,13 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   /* ---------- loop ---------- */
   const tmpC = new THREE.Color();
   let last = performance.now();
-  function lazyTextures(camY: number, sel: Entry | undefined): void {
+  function lazyTextures(sel: Entry | undefined): void {
     if (sel && !sel.hasCover) applyCover(sel);
-    // Only books near the visible rows get a spine texture, a few per frame, so 100+ books do not stall startup.
-    const reach = camDist * FOV_T + ROW_H;
+    // Only books in bookcases near the camera get a spine texture, a few per frame, so 100+ books do not stall startup.
+    const reach = camDist * FOV_T * camera.aspect + pitch * 0.6;
     let budget = 6;
     for (const e of entries.values()) {
-      if (e.hasSpine || Math.abs(e.home.y - camY) > reach) continue;
+      if (e.hasSpine || Math.abs(caseX(e.caseIndex, pitch) - panCur) > reach) continue;
       applySpine(e);
       if (--budget === 0) break;
     }
@@ -448,17 +463,33 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     pointer.sy += (pointer.y - pointer.sy) * ease(dt, 4);
     panCur += (panTarget - panCur) * ease(dt, 10);
     moved += Math.abs(pointer.sx - px) + Math.abs(pointer.sy - py) + Math.abs(panCur - pc);
-    const camY = panCur + 2 * camDist * FOV_T * 0.035;
-    camera.position.set(pointer.sx * 0.5, camY - pointer.sy * 0.3, camDist);
-    camera.lookAt(pointer.sx * 0.15, camY, 0);
+    const camY = 2 * camDist * FOV_T * 0.035;
+    camera.position.set(panCur + pointer.sx * 0.5, camY - pointer.sy * 0.3, camDist);
+    camera.lookAt(panCur + pointer.sx * 0.15, camY, 0);
     camera.updateMatrixWorld();
     const sel = state.sel ? entries.get(state.sel) : undefined;
     const st = sel ? selTarget(sel.b) : null;
-    lazyTextures(camY, sel);
+    lazyTextures(sel);
+    const near = nearestCase(panCur, pitch, wall.cases.length);
+    if (near !== shadowCase) {
+      shadowCase = near;
+      const cx = caseX(near, pitch);
+      key.position.set(cx - 5, Hs * 0.1 + 9, 13);
+      key.target.position.set(cx, 0, 0);
+      key.target.updateMatrixWorld();
+      shadowDirty = true;
+      force = true;
+    }
+    const target = nearestCase(panTarget, pitch, wall.cases.length);
+    const vk = `${target}|${wall.cases.length}|${wall.cases.map((c) => c.label ?? '').join(',')}`;
+    if (vk !== viewKey) {
+      viewKey = vk;
+      hooks.onView(target, wall.cases.map((c) => c.label));
+    }
     const filtering = !!(state.q || state.status);
-    const key = `${state.q}|${state.status}`;
-    if (key !== filterKey) {
-      filterKey = key;
+    const fk = `${state.q}|${state.status}`;
+    if (fk !== filterKey) {
+      filterKey = fk;
       entries.forEach((e) => (e.match = matches(e.b, state.q, state.status)));
     }
     entries.forEach((e) => {
@@ -552,8 +583,17 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   return {
     rebuild: buildShelf,
     applySettings,
-    scrollToEnd() {
-      panTarget = -panRange;
+    focusBook(id) {
+      const c = wall.caseOf.get(id);
+      if (c !== undefined) panTarget = caseX(c, pitch);
+    },
+    focusCase(index) {
+      panTarget = caseX(clampCase(index, wall.cases.length), pitch);
+    },
+    revealMatch() {
+      if (!state.q && !state.status) return;
+      const c = firstMatchCase(wall, (b) => matches(b, state.q, state.status));
+      if (c !== null) panTarget = caseX(c, pitch);
     },
     setVisible(on) {
       visible = on;

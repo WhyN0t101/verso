@@ -10,6 +10,7 @@ import {initPanel, showPanel, hidePanel, fillPanel} from './ui/panel';
 import {initForm, openForm, closeForm, setGenreOptions} from './ui/form';
 import {initExport, openExport, closeExport} from './ui/exportDialog';
 import {renderList} from './ui/list';
+import {initDots, renderDots} from './ui/dots';
 import {initStyle, openStyle, closeStyle, applyBackground} from './ui/style';
 import {buildBackup, mergeBooks, parseBackup} from './data/backup';
 
@@ -60,6 +61,7 @@ function setListMode(on: boolean): void {
   if (state.sel) deselect();
   $('listView').classList.toggle('hidden', !on);
   $('hint').classList.toggle('hidden', on);
+  $('dots').style.display = on ? 'none' : '';
   $('viewToggle').textContent = on ? 'Shelf view' : 'List view';
   shelf?.setVisible(!on);
   refresh();
@@ -71,6 +73,7 @@ shelf = createShelf($<HTMLCanvasElement>('gl'), {
       if (id !== state.sel) select(id);
     } else if (state.sel) deselect();
   },
+  onView: renderDots,
   onHover(title, x, y) {
     if (title === null) {
       tip.style.opacity = '0';
@@ -118,11 +121,12 @@ initForm((draft, editingId) => {
   $<HTMLInputElement>('q').value = '';
   state.q = '';
   refresh();
-  shelf?.scrollToEnd();
+  shelf?.focusBook(b.id);
   setTimeout(() => select(b.id), 350);
 });
 
 initExport();
+initDots((i) => shelf?.focusCase(i));
 initStyle(() => shelf?.applySettings());
 
 const menu = $('menu');
@@ -175,6 +179,7 @@ $('q').addEventListener('input', (ev) => {
   state.q = (ev.target as HTMLInputElement).value.trim().toLowerCase();
   if (state.sel) deselect();
   if (listMode) renderList(select);
+  shelf?.revealMatch();
 });
 $<HTMLSelectElement>('statusFilter').addEventListener('change', (ev) => {
   const sel = ev.target as HTMLSelectElement;
@@ -182,11 +187,13 @@ $<HTMLSelectElement>('statusFilter').addEventListener('change', (ev) => {
   sel.classList.toggle('active', !!state.status);
   if (state.sel) deselect();
   if (listMode) renderList(select);
+  shelf?.revealMatch();
 });
 $('q').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter' || !(state.q || state.status)) return;
   const first = state.books.find((b) => matches(b, state.q, state.status));
   if (!first) return;
+  shelf?.focusBook(first.id);
   select(first.id);
   (ev.target as HTMLElement).blur();
 });
