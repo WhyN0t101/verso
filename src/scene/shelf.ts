@@ -32,6 +32,8 @@ interface Entry {
   tint: THREE.Color;
   hasSpine: boolean;
   hasCover: boolean;
+  /** Result of the search and status filter, refreshed only when they change. */
+  match: boolean;
 }
 
 const ROW_H = 2.55;
@@ -57,7 +59,13 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // Books rarely move, and the shadow pass redraws every book, so it only runs when something changed.
+  renderer.shadowMap.autoUpdate = false;
 
+  /** Set whenever something outside the animation loop changes what is on screen. */
+  let force = true;
+  let filterKey = '';
+  let shadowDirty = false;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 120);
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -103,6 +111,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   const backMat = new THREE.MeshStandardMaterial({map: wood, color: 0x7a6050, roughness: 0.9});
 
   function applySettings(): void {
+    force = true;
     const {wood: woodId, light: lightId} = state.settings;
     const old = wood;
     wood = woodTexture(WOODS[woodId]);
@@ -141,6 +150,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   /** Cover textures whose real image has been requested, so each is fetched once. */
   const realCovers = new Set<string>();
   const pointer = {x: 0, y: 0, sx: 0, sy: 0};
+
 
   function getTex(b: Book, kind: 'spine' | 'cover'): THREE.Texture {
     const k = `${b.id}:${b.v}:${kind}`;
@@ -199,6 +209,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     m.needsUpdate = true;
     e.base[MAT.spine]?.set(0xffffff);
     e.hasSpine = true;
+    force = true;
   }
   /** The cover face only shows on the pulled-out book, so its texture is made on first selection. */
   function applyCover(e: Entry): void {
@@ -208,6 +219,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     m.needsUpdate = true;
     e.base[MAT.cover]?.set(0xffffff);
     e.hasCover = true;
+    force = true;
     const b = e.b;
     const k = `${b.id}:${b.v}:cover`;
     if (!b.cover || realCovers.has(k)) return;
@@ -224,11 +236,15 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       if (entries.get(b.id) === e) {
         m.map = t;
         m.needsUpdate = true;
+        force = true;
       }
     });
   }
 
   function buildShelf(): void {
+    force = true;
+    filterKey = '';
+    renderer.shadowMap.needsUpdate = true;
     const prev = new Map<string, {p: THREE.Vector3; r: THREE.Euler; s: number}>();
     entries.forEach((e, id) => prev.set(id, {p: e.grp.position.clone(), r: e.grp.rotation.clone(), s: e.grp.scale.x}));
     clearFrame();
@@ -287,7 +303,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           grp.scale.setScalar(pv.s);
         }
         bookRoot.add(grp);
-        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false});
+        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, match: true});
         pickables.push(mesh);
       }
     });
@@ -313,6 +329,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   function onResize(): void {
     if (!visible) return;
+    force = true;
     const w = innerWidth;
     const h = innerHeight;
     renderer.setSize(w, h, false);
@@ -423,9 +440,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
+    let moved = 0;
+    const px = pointer.sx;
+    const py = pointer.sy;
+    const pc = panCur;
     pointer.sx += (pointer.x - pointer.sx) * ease(dt, 4);
     pointer.sy += (pointer.y - pointer.sy) * ease(dt, 4);
     panCur += (panTarget - panCur) * ease(dt, 10);
+    moved += Math.abs(pointer.sx - px) + Math.abs(pointer.sy - py) + Math.abs(panCur - pc);
     const camY = panCur + 2 * camDist * FOV_T * 0.035;
     camera.position.set(pointer.sx * 0.5, camY - pointer.sy * 0.3, camDist);
     camera.lookAt(pointer.sx * 0.15, camY, 0);
@@ -434,9 +456,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const st = sel ? selTarget(sel.b) : null;
     lazyTextures(camY, sel);
     const filtering = !!(state.q || state.status);
+    const key = `${state.q}|${state.status}`;
+    if (key !== filterKey) {
+      filterKey = key;
+      entries.forEach((e) => (e.match = matches(e.b, state.q, state.status)));
+    }
     entries.forEach((e) => {
       const isSel = sel === e;
-      const match = matches(e.b, state.q, state.status);
+      const match = e.match;
       const p = e.grp.position;
       let tx = e.home.x;
       let ty = e.home.y;
@@ -470,6 +497,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         rxy = far ? 9 : 10;
         rz = far ? 3.5 : 10;
       }
+      const ox = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.scale.x;
       p.x += (tx - p.x) * ease(dt, rxy);
       p.y += (ty - p.y) * ease(dt, rxy);
       p.z += (tz - p.z) * ease(dt, rz);
@@ -477,19 +505,37 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       e.grp.rotation.x += (rX - e.grp.rotation.x) * ease(dt, 6);
       const s = e.grp.scale.x;
       e.grp.scale.setScalar(s + (sc - s) * ease(dt, 6));
+      const nx = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.scale.x;
+      if (Math.abs(nx - ox) > 1e-5) {
+        moved++;
+        shadowDirty = true;
+      }
       let tint = 0xffffff;
       if (sel && !isSel) tint = 0x5e564d;
       else if (filtering && !match) tint = 0x4d4740;
       tmpC.setHex(tint);
-      e.tint.lerp(tmpC, ease(dt, 8));
+      const diff = Math.abs(e.tint.r - tmpC.r) + Math.abs(e.tint.g - tmpC.g) + Math.abs(e.tint.b - tmpC.b);
+      if (diff === 0) return;
+      // Snap the last sliver so the easing ends and the loop can go idle.
+      if (diff < 0.002) e.tint.copy(tmpC);
+      else e.tint.lerp(tmpC, ease(dt, 8));
+      moved++;
       for (let i = 0; i < e.mats.length; i++) e.mats[i]?.color.copy(e.base[i] as THREE.Color).multiply(e.tint);
     });
+    // An idle shelf costs nothing: draw only while something is still easing or was just changed.
+    if (!moved && !force) return;
+    force = false;
+    if (shadowDirty) {
+      renderer.shadowMap.needsUpdate = true;
+      shadowDirty = false;
+    }
     renderer.render(scene, camera);
   }
 
   if (import.meta.env.DEV) {
     // Lets the screenshot harness click a book without guessing pixel positions.
     (window as unknown as {__verso: unknown}).__verso = {
+      stats: () => ({...renderer.info.render, textures: renderer.info.memory.textures}),
       bookScreenPos(i: number) {
         const e = [...entries.values()][i];
         if (!e) return null;
@@ -511,6 +557,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     },
     setVisible(on) {
       visible = on;
+      force = true;
       canvas.classList.toggle('hidden', !on);
       if (on) {
         last = performance.now();

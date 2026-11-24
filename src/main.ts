@@ -15,6 +15,16 @@ import {buildBackup, mergeBooks, parseBackup} from './data/backup';
 
 await fontsReady;
 
+// Dev only: `?books=150` swaps in generated books (memory only until something persists).
+if (import.meta.env.DEV) {
+  const n = Number(new URLSearchParams(location.search).get('books'));
+  if (n > 0) {
+    const {generateBooks} = await import('./dev/seedBooks');
+    state.books = generateBooks(Math.min(n, 1000));
+    state.seeded = false;
+  }
+}
+
 const hint = $('hint');
 const tip = $('tip');
 let shelf: Shelf | null = null;
