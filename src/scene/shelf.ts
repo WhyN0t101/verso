@@ -24,8 +24,10 @@ export interface WallView {
   caseCount: number;
   /** Jump list: genres when grouped, otherwise one entry per bookcase. */
   sections: SectionInfo[];
-  /** Name of the section at the current bookcase. */
+  /** What the current bookcase holds, worded like its fascia. */
   current: string;
+  /** Jump-list entries that have books on the current bookcase. */
+  here: string[];
 }
 
 export interface Shelf {
@@ -71,6 +73,9 @@ const FASCIA_H = 0.6;
 const PLINTH_H = 0.3;
 /** Empty space around the framed bookcase: room for the lamp above and the floor below. */
 const VIEW_MARGIN = 0.9;
+const HEADER_PX = 64;
+/** Height of the section bar plus its gap on screens narrower than the rail breakpoint. */
+const NARROW_BAR_PX = 64;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
 const LIGHT_UNIT = Math.PI;
 const MAT = {cover: 0, back: 1, spine: 4} as const;
@@ -510,8 +515,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   /** Camera distance and height that frame the given bookcase so it fills the viewport. */
   function frameFor(index: number): {dist: number; cy: number} {
     const v = caseView[clampCase(index, caseView.length)] ?? {cy: 0, h: Hs};
-    const aspect = innerWidth / innerHeight;
-    return {dist: Math.max(v.h / 2 / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.1 + DEPTH / 2, cy: v.cy};
+    const H = innerHeight;
+    const aspect = innerWidth / H;
+    // The header and, on narrow screens, the section bar cover part of the canvas: frame the case in the free band.
+    const topInset = HEADER_PX;
+    const bottomInset = innerWidth <= 1000 ? NARROW_BAR_PX : 8;
+    const free = Math.max(H - topInset - bottomInset, H * 0.5);
+    const dist = Math.max(((v.h * H) / free / 2) / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.1 + DEPTH / 2;
+    // Content sits lower than the screen centre when the top inset is larger than the bottom one.
+    const worldPerPx = (2 * dist * FOV_T) / H;
+    return {dist, cy: v.cy + ((topInset - bottomInset) / 2) * worldPerPx};
   }
 
   /** Re-aims the camera framing; it eases there unless this is the first frame or motion is reduced. */
@@ -712,8 +725,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const vk = `${target}|${wall.sections.map((x) => `${x.name}:${x.count}:${x.firstCase}`).join(',')}`;
     if (vk !== viewKey) {
       viewKey = vk;
-      const here = wall.cases[target]?.sections[0]?.name;
-      hooks.onView({caseIndex: target, caseCount: wall.cases.length, sections: wall.sections, current: here ?? `Bookcase ${target + 1}`});
+      const parts = wall.cases[target]?.sections ?? [];
+      const name = parts.length ? fasciaText(parts) : `Bookcase ${target + 1}`;
+      hooks.onView({caseIndex: target, caseCount: wall.cases.length, sections: wall.sections, current: name, here: parts.length ? parts.map((p) => p.name) : [name]});
     }
     const filtering = !!(state.q || state.status);
     const fk = `${state.q}|${state.status}`;

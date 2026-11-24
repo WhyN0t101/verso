@@ -50,8 +50,12 @@
     <button class="btn" id="selConfirmNo">Keep</button>
   </span>
 </div>
-<div id="dots" class="hidden" aria-label="Bookcases"></div>
-<div id="hint">Click a book to pull it out. Drag or scroll to move along the shelf.</div>
+<nav id="sections" class="hidden" aria-label="Sections"><ul id="sectionList"></ul></nav>
+<div id="sectionBar" class="hidden">
+  <button type="button" id="sectionCurrent" aria-haspopup="true" aria-expanded="false"><span id="sectionName"></span><span id="sectionCount"></span></button>
+</div>
+<div id="sectionSheet" class="hidden" role="region" aria-label="Jump to a section"><ul id="sectionSheetList"></ul></div>
+<div id="hint">Drag or swipe to browse. Click a book to open it.</div>
 <div id="empty" class="hidden">Your shelf is empty. Add your first book to start.</div>
 <div id="tip"></div>
 <div id="toast" role="status"></div>

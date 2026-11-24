@@ -10,7 +10,7 @@ import {initPanel, showPanel, hidePanel, fillPanel} from './ui/panel';
 import {initForm, openForm, closeForm, setGenreOptions} from './ui/form';
 import {initExport, openExport, closeExport} from './ui/exportDialog';
 import {renderList} from './ui/list';
-import {initDots, renderDots} from './ui/dots';
+import {closeSectionSheet, initSections, renderSections} from './ui/sections';
 import {enterSelect, exitSelect, initSelect, togglePick} from './ui/selectMode';
 import {removeBooks, restoreBooks} from './data/bulk';
 import {createToneQueue} from './toneQueue';
@@ -42,6 +42,7 @@ function select(id: string): void {
   showPanel(b);
   hint.style.opacity = '0';
   tip.style.opacity = '0';
+  document.body.classList.add('book-open');
 }
 
 /** A click or tap on a book: opens it, or in Select mode ticks it. */
@@ -54,6 +55,7 @@ function deselect(): void {
   state.sel = null;
   hidePanel();
   hint.style.opacity = '1';
+  document.body.classList.remove('book-open');
 }
 
 /** Everything that depends on the book list: shelf geometry, count, empty state, list rows, genre suggestions. */
@@ -71,7 +73,7 @@ function setListMode(on: boolean): void {
   if (state.sel) deselect();
   $('listView').classList.toggle('hidden', !on);
   $('hint').classList.toggle('hidden', on);
-  $('dots').style.display = on ? 'none' : '';
+  document.body.classList.toggle('list-mode', on);
   $('viewToggle').textContent = on ? 'Shelf view' : 'List view';
   shelf?.setVisible(!on);
   refresh();
@@ -84,7 +86,7 @@ shelf = createShelf($<HTMLCanvasElement>('gl'), {
     } else if (state.sel) deselect();
   },
   onLongPress: (id) => enterSelect(id),
-  onView: renderDots,
+  onView: renderSections,
   onHover(title, x, y) {
     if (title === null) {
       tip.style.opacity = '0';
@@ -169,7 +171,7 @@ const tones = createToneQueue({
   },
 });
 initExport();
-initDots((i) => shelf?.focusCase(i));
+initSections((i) => shelf?.focusCase(i));
 initStyle(() => shelf?.applySettings());
 
 const menu = $('menu');
@@ -262,6 +264,7 @@ $('q').addEventListener('keydown', (ev) => {
 addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
   if (state.selecting) exitSelect();
+  else if (closeSectionSheet()) return;
   else if (!menu.classList.contains('hidden')) setMenu(false);
   else if (!$('style').classList.contains('hidden')) closeStyle();
   else if (!$('modal').classList.contains('hidden')) closeForm();
@@ -273,6 +276,29 @@ addEventListener('keydown', (ev) => {
     if (listMode) renderList(activate);
   }
 });
+
+// The hint teaches the gesture once; any first interaction retires it for good.
+const HINT_KEY = 'verso.hintSeen';
+const hintSeen = (): boolean => {
+  try {
+    return localStorage.getItem(HINT_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+if (hintSeen()) hint.classList.add('gone');
+else {
+  const dismiss = (): void => {
+    hint.classList.add('gone');
+    try {
+      localStorage.setItem(HINT_KEY, '1');
+    } catch {
+      // Private mode: the hint just comes back next visit.
+    }
+    for (const ev of ['pointerdown', 'keydown', 'wheel']) removeEventListener(ev, dismiss, true);
+  };
+  for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, dismiss, {capture: true, passive: true});
+}
 
 // After the first frames are on screen, so the queue never competes with startup.
 const startTones = (): void => tones.add(state.books);
