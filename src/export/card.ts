@@ -1,30 +1,23 @@
 import type {Book} from '../types';
-import {hsl} from '../util';
-import {CREAM, SANS, SERIF, accOf, drawCover, letterSpacing, paletteOf, roundRect, sat, wrapAll, wrapLines} from '../textures/draw';
+import {SANS, SERIF, drawCover, letterSpacing, roundRect, wrapAll, wrapLines} from '../textures/draw';
+import {cardQuote, fitCover} from './layout';
+import {themeById, type ThemeId} from './themes';
 
 export type CardFormat = 'post' | 'story' | 'square';
 const SIZES: Record<CardFormat, [number, number]> = {post: [1080, 1350], story: [1080, 1920], square: [1080, 1080]};
+const PLANK_H = 26;
 
 /** Draws the shareable card. Fonts must already be loaded; `cover` must be same-origin so the canvas stays untainted. */
-export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | null): HTMLCanvasElement {
+export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | null, themeId: ThemeId = 'classic'): HTMLCanvasElement {
   const [W, H] = SIZES[fmt];
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
   const g = c.getContext('2d');
   if (!g) throw new Error('2D canvas unavailable');
-  const p = paletteOf(b);
-  const bg = g.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, hsl(p.h, sat(p, -2), 24));
-  bg.addColorStop(1, hsl(p.h, sat(p, 2), 7));
-  g.fillStyle = bg;
-  g.fillRect(0, 0, W, H);
-  const gl = g.createRadialGradient(W * 0.5, H * 0.3, 20, W * 0.5, H * 0.3, W * 0.85);
-  gl.addColorStop(0, hsl((p.h + 20) % 360, 60, 60, 0.28));
-  gl.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = gl;
-  g.fillRect(0, 0, W, H);
-  const acc = accOf(b);
+  const theme = themeById(themeId);
+  theme.paint(g, W, H, b);
+  const acc = theme.accent(b);
   const pad = 84;
   g.textBaseline = 'alphabetic';
   g.font = `600 24px ${SANS}`;
@@ -37,16 +30,63 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   letterSpacing(g, 0);
 
   const square = fmt === 'square';
-  const ch = fmt === 'story' ? 820 : square ? 700 : 540;
+  const idealCover = fmt === 'story' ? 820 : square ? 700 : 540;
   const aspect = cover ? cover.naturalWidth / cover.naturalHeight : b.d / b.h;
   const face = cover ?? drawCover(b, Math.round(b.d * 520), Math.round(b.h * 520));
-  const cw = Math.min(ch * aspect, W - pad * 2);
-  const cx = square ? pad : (W - cw) / 2;
   const cy = fmt === 'story' ? 200 : square ? 175 : 150;
+
+  // Text is measured first so the cover can give way to it instead of text being cut off.
+  const align: CanvasTextAlign = square ? 'left' : 'center';
+  const quote = cardQuote(b);
+  const nfs = square ? 32 : fmt === 'story' ? 42 : 38;
+  const nlh = nfs * 1.38;
+  const bottom = H - pad - 54;
+  const shelfGap = theme.plank ? PLANK_H : 0;
+
+  // Square keeps its side-by-side layout: the cover is fixed and the text column fills the rest.
+  let ch = idealCover;
+  let cw = Math.min(ch * aspect, W - pad * 2);
+  const textW = square ? W - pad - (pad + cw + 64) : W - pad * 2;
+  const maxTL = square ? 4 : 2;
+  let tfs = square ? 54 : fmt === 'story' ? 72 : 64;
+  g.font = `700 ${tfs}px ${SERIF}`;
+  while (wrapAll(g, b.title, textW).length > maxTL && tfs > 34) {
+    tfs -= 2;
+    g.font = `700 ${tfs}px ${SERIF}`;
+  }
+  const titleLines = wrapLines(g, b.title, textW, maxTL);
+  g.font = `500 ${square ? 30 : 34}px ${SANS}`;
+  const authorLines = b.author ? wrapLines(g, 'by ' + b.author, textW, 2) : [];
+  const starsH = b.rating > 0 ? (square ? 66 : 70) : 0;
+  const authorH = authorLines.length * (square ? 40 : 44);
+  const headH = starsH + titleLines.length * tfs * 1.14 + 6 + authorH + 22 + 62;
+
+  g.font = `italic 400 ${nfs}px ${SERIF}`;
+  const wantLines = quote ? Math.min(wrapAll(g, quote.text, textW).length, fmt === 'story' ? 10 : 7) : 0;
+  let quoteLines: number;
+  if (square) {
+    quoteLines = Math.max(0, Math.min(wantLines, Math.floor((bottom - (cy + 40 + headH)) / nlh)));
+  } else {
+    const fit = fitCover({
+      top: cy,
+      bottom,
+      fixedBelow: 78 + shelfGap + headH,
+      quoteLineH: nlh,
+      wantLines,
+      minCover: Math.round(idealCover * 0.78),
+      idealCover,
+      maxCover: Math.round(idealCover * 1.2),
+    });
+    ch = fit.cover;
+    cw = Math.min(ch * aspect, W - pad * 2);
+    quoteLines = fit.quoteLines;
+  }
+
+  const cx = square ? pad : (W - cw) / 2;
   g.save();
   g.shadowColor = 'rgba(0,0,0,.6)';
-  g.shadowBlur = 60;
-  g.shadowOffsetY = 30;
+  g.shadowBlur = theme.shadow;
+  g.shadowOffsetY = theme.shadow / 2;
   roundRect(g, cx, cy, cw, ch, 10);
   g.fillStyle = '#000';
   g.fill();
@@ -62,12 +102,10 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   g.fillStyle = hg;
   g.fillRect(cx, cy, cw * 0.1, ch);
   g.restore();
+  if (theme.plank) drawPlank(g, square ? pad / 2 : 36, cy + ch, square ? cx + cw + pad / 2 : W - 36);
 
-  const align: CanvasTextAlign = square ? 'left' : 'center';
   const tx = square ? cx + cw + 64 : W / 2;
-  const tw = square ? W - pad - tx : W - pad * 2;
-  let y = square ? cy + 40 : cy + ch + 78;
-  const bottom = H - pad - 54;
+  let y = square ? cy + 40 : cy + ch + 78 + shelfGap;
   g.textAlign = align;
 
   if (b.rating > 0) {
@@ -82,52 +120,51 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
     }
     g.globalAlpha = 1;
     g.textAlign = align;
-    y += square ? 66 : 70;
+    y += starsH;
   }
-  let tfs = square ? 54 : fmt === 'story' ? 72 : 64;
   g.font = `700 ${tfs}px ${SERIF}`;
-  const maxTL = square ? 4 : 2;
-  while (wrapAll(g, b.title, tw).length > maxTL && tfs > 34) {
-    tfs -= 2;
-    g.font = `700 ${tfs}px ${SERIF}`;
-  }
-  g.fillStyle = CREAM;
-  wrapLines(g, b.title, tw, maxTL).forEach((l) => {
+  g.fillStyle = theme.ink;
+  for (const l of titleLines) {
     g.fillText(l, tx, y);
     y += tfs * 1.14;
-  });
+  }
   y += 6;
-  if (b.author) {
-    g.font = `500 ${square ? 30 : 34}px ${SANS}`;
-    g.fillStyle = 'rgba(246,234,212,.74)';
-    wrapLines(g, 'by ' + b.author, tw, 2).forEach((l) => {
-      g.fillText(l, tx, y + 10);
-      y += square ? 40 : 44;
-    });
+  g.font = `500 ${square ? 30 : 34}px ${SANS}`;
+  g.fillStyle = theme.mute;
+  for (const l of authorLines) {
+    g.fillText(l, tx, y + 10);
+    y += square ? 40 : 44;
   }
   y += 22;
   g.fillStyle = acc;
   g.fillRect(align === 'center' ? tx - 30 : tx, y, 60, 4);
   y += 62;
-  const text = b.notes.trim() || b.summary.trim();
-  if (text) {
-    const quote = b.notes.trim() ? `“${text}”` : text;
-    const nfs = square ? 32 : fmt === 'story' ? 42 : 38;
-    const nlh = nfs * 1.38;
+  if (quote && quoteLines > 0) {
     g.font = `italic 400 ${nfs}px ${SERIF}`;
-    g.fillStyle = CREAM;
-    const maxL = Math.floor((bottom - y) / nlh);
-    if (maxL >= 1)
-      wrapLines(g, quote, tw, Math.min(maxL, fmt === 'story' ? 10 : 7)).forEach((l) => {
-        g.fillText(l, tx, y);
-        y += nlh;
-      });
+    g.fillStyle = theme.ink;
+    // Wrapped again with the line budget so a quote that does not fit ends in an ellipsis.
+    for (const l of wrapLines(g, quote.text, textW, quoteLines)) {
+      g.fillText(l, tx, y);
+      y += nlh;
+    }
   }
   g.textAlign = 'center';
   g.font = `500 22px ${SANS}`;
   letterSpacing(g, 3);
-  g.fillStyle = 'rgba(246,234,212,.5)';
+  g.fillStyle = theme.mute;
+  g.globalAlpha = 0.7;
   g.fillText('SHELVED WITH VERSO', W / 2, H - pad + 6);
+  g.globalAlpha = 1;
   letterSpacing(g, 0);
   return c;
+}
+
+function drawPlank(g: CanvasRenderingContext2D, x0: number, y: number, x1: number): void {
+  const grad = g.createLinearGradient(0, y, 0, y + PLANK_H);
+  grad.addColorStop(0, '#9a6a3f');
+  grad.addColorStop(1, '#5a3a1f');
+  g.fillStyle = grad;
+  g.fillRect(x0, y, x1 - x0, PLANK_H);
+  g.fillStyle = 'rgba(255,230,180,.35)';
+  g.fillRect(x0, y, x1 - x0, 3);
 }

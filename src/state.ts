@@ -1,6 +1,7 @@
 import type {Book, Settings} from './types';
 import {load, save} from './data/storage';
 import {toast} from './util';
+import type {ThemeId} from './export/themes';
 
 const stored = load();
 
@@ -10,6 +11,7 @@ export const state = {
   sel: null as string | null,
   q: '',
   fmt: 'post' as 'post' | 'story' | 'square',
+  theme: 'classic' as ThemeId,
   editing: null as string | null,
   /** Demo books not yet saved: an import replaces them instead of merging into them. */
   seeded: !!stored.seeded,

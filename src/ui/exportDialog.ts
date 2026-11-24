@@ -2,6 +2,7 @@ import type {Book} from '../types';
 import {state} from '../state';
 import {$, downloadBlob, slug} from '../util';
 import {drawCard, type CardFormat} from '../export/card';
+import {THEMES, type ThemeId} from '../export/themes';
 import {fontsReady} from '../fonts';
 import {loadCover} from '../covers';
 
@@ -18,7 +19,7 @@ async function render(): Promise<void> {
   await fontsReady;
   const cover = book.cover ? await loadCover(book.cover) : null;
   if (id !== renderId) return;
-  const canvas = drawCard(book, state.fmt, cover);
+  const canvas = drawCard(book, state.fmt, cover, state.theme);
   const out = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
   if (id !== renderId || !out) return;
   blob = out;
@@ -29,7 +30,7 @@ async function render(): Promise<void> {
   updateShare();
 }
 
-const fileName = () => `${slug(book?.title ?? 'book')}-${state.fmt}.png`;
+const fileName = () => `${slug(book?.title ?? 'book')}-${state.fmt}-${state.theme}.png`;
 const asFile = (b: Blob) => new File([b], fileName(), {type: 'image/png'});
 
 /** Share (the native sheet, with Instagram on phones) only appears where the browser can share files. */
@@ -46,6 +47,21 @@ export function openExport(b: Book): void {
 }
 
 export function initExport(): void {
+  const themes = $('exThemes');
+  for (const t of THEMES) {
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (t.id === state.theme ? ' on' : '');
+    btn.dataset.theme = t.id;
+    btn.textContent = t.label;
+    themes.appendChild(btn);
+  }
+  themes.addEventListener('click', (ev) => {
+    const id = (ev.target as HTMLElement).dataset.theme as ThemeId | undefined;
+    if (!id) return;
+    state.theme = id;
+    [...themes.children].forEach((el) => el.classList.toggle('on', (el as HTMLElement).dataset.theme === id));
+    void render();
+  });
   $('exSeg').addEventListener('click', (ev) => {
     const fmt = (ev.target as HTMLElement).dataset.fmt as CardFormat | undefined;
     if (!fmt) return;
