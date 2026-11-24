@@ -145,3 +145,27 @@ describe('router', () => {
     expect(res.status).toBe(405);
   });
 });
+
+describe('upstream retry', () => {
+  const ok = () => json({docs: [{key: '/works/OL1W', title: 'T', author_name: ['A']}]});
+
+  it('retries once after a network error or 5xx, then succeeds', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockImplementationOnce(() => json({}, 503))
+      .mockImplementation(ok);
+    expect((await call('/api/search?q=retry-a')).status).toBe(502);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockClear();
+    spy.mockRejectedValueOnce(new Error('timeout')).mockImplementation(ok);
+    expect((await call('/api/search?q=retry-b')).status).toBe(200);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a 4xx', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({}, 404));
+    expect((await call('/api/cover?id=999')).status).toBe(404);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});

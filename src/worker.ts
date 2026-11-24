@@ -62,8 +62,26 @@ function json(body: unknown, status = 200, cacheControl = 'no-store'): Response 
   return new Response(JSON.stringify(body), {status, headers: {'Content-Type': 'application/json', 'Cache-Control': cacheControl}});
 }
 
-async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
-  const r = await fetch(url, {headers: {'User-Agent': USER_AGENT, Accept: 'application/json'}, signal: AbortSignal.timeout(timeoutMs)});
+/** Open Library can take ~17s on a cold request, so the per-attempt budget is generous. */
+const UPSTREAM_TIMEOUT_MS = 12000;
+
+/** GET with one retry on a timeout, network error or 5xx. Other statuses (404, 429) are returned as they are. */
+async function fetchUpstream(url: string, headers: Record<string, string>): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, {headers: {'User-Agent': USER_AGENT, ...headers}, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)});
+      if (r.status < 500 || attempt === 1) return r;
+      lastErr = new Error(`upstream ${r.status} for ${new URL(url).hostname}`);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+async function getJson(url: string): Promise<unknown> {
+  const r = await fetchUpstream(url, {Accept: 'application/json'});
   if (!r.ok) throw new Error(`upstream ${r.status} for ${new URL(url).hostname}`);
   return r.json();
 }
@@ -206,10 +224,7 @@ async function handleCover(url: URL, ctx: Ctx): Promise<Response> {
   try {
     return await withCache(`${url.origin}/api/cover?id=${id}&size=${size}`, ctx, async () => {
       // default=false makes Open Library answer 404 instead of a blank placeholder, so callers can fall back.
-      const r = await fetch(`https://covers.openlibrary.org/b/id/${id}-${size}.jpg?default=false`, {
-        headers: {'User-Agent': USER_AGENT},
-        signal: AbortSignal.timeout(8000),
-      });
+      const r = await fetchUpstream(`https://covers.openlibrary.org/b/id/${id}-${size}.jpg?default=false`, {});
       const type = r.headers.get('content-type') ?? '';
       if (r.status === 404 || !type.startsWith('image/')) return json({error: 'no cover'}, 404, 'public, s-maxage=3600');
       if (!r.ok) throw new Error(`upstream ${r.status}`);

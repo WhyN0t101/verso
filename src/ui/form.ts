@@ -27,10 +27,15 @@ let coverReady: Promise<void> = Promise.resolve();
 /** Fields the user typed in since the last pick; auto-fill never overwrites these. */
 const touched = new Set<string>();
 
-function setStatus(msg: string): void {
+let retryFn: (() => void) | null = null;
+
+/** `retry` shows a Retry button next to the message; any new status clears the previous one. */
+function setStatus(msg: string, retry?: () => void): void {
   const el = $('fStatus');
   el.textContent = msg;
   el.classList.toggle('hidden', !msg);
+  retryFn = retry ?? null;
+  $('fRetry').classList.toggle('hidden', !retry);
 }
 
 function renderResults(results: SearchResult[]): void {
@@ -66,7 +71,7 @@ async function runSearch(q: string): Promise<void> {
     if (ctl.signal.aborted) return;
     console.warn('book search failed', err);
     renderResults([]);
-    setStatus('Search is unavailable right now. You can still fill in the details by hand.');
+    setStatus('Search is unavailable right now. Retry, or fill in the details by hand.', () => void runSearch(q));
   }
 }
 
@@ -107,6 +112,10 @@ async function pick(r: SearchResult): Promise<void> {
   f('fGenre').value = r.genre;
   f('fSummary').value = '';
   pickCover(r.cover);
+  await lookupSummary(r);
+}
+
+async function lookupSummary(r: SearchResult): Promise<void> {
   workCtl?.abort();
   const ctl = (workCtl = new AbortController());
   setStatus('Looking up the summary…');
@@ -120,7 +129,7 @@ async function pick(r: SearchResult): Promise<void> {
   } catch (err) {
     if (ctl.signal.aborted) return;
     console.warn('summary lookup failed', err);
-    setStatus('Could not load a summary. You can write your own.');
+    setStatus('Could not load a summary. Retry, or write your own.', () => void lookupSummary(r));
   }
 }
 
@@ -140,6 +149,7 @@ export function initForm(onSave: (draft: BookDraft, editingId: string | null) =>
   });
   for (const id of ['fTitle', 'fAuthor', 'fYear', 'fGenre', 'fSummary']) f(id).addEventListener('input', () => touched.add(id));
 
+  $('fRetry').addEventListener('click', () => retryFn?.());
   $('fCancel').addEventListener('click', closeForm);
   $('fCoverRemove').addEventListener('click', () => pickCover(null));
   $('form').addEventListener('submit', (ev) => {
