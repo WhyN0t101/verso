@@ -9,6 +9,8 @@ const LEGACY_KEY = 'myshelf.v1';
 export interface Stored {
   books: Book[];
   settings: Settings;
+  /** True while the books are the untouched demo seed (nothing saved yet). */
+  seeded?: boolean;
 }
 
 let memory: Stored | null = null;
@@ -37,7 +39,7 @@ export function load(): Stored {
     if (books.length) return {books, settings: {...DEFAULT_SETTINGS}};
   }
   if (memory) return memory;
-  return {books: SEED.map(makeBook), settings: {...DEFAULT_SETTINGS}};
+  return {books: SEED.map(makeBook), settings: {...DEFAULT_SETTINGS}, seeded: true};
 }
 
 /** Returns false when the browser refused the write (private mode, quota). */

@@ -3,13 +3,14 @@ import {fontsReady} from './fonts';
 import {state, persist, findBook} from './state';
 import {makeBook, updateBook} from './data/books';
 import {matches} from './search';
-import {$} from './util';
+import {$, downloadBlob, toast} from './util';
 import {createShelf, type Shelf} from './scene/shelf';
 import {initPanel, showPanel, hidePanel, fillPanel} from './ui/panel';
 import {initForm, openForm, closeForm, setGenreOptions} from './ui/form';
 import {initExport, openExport, closeExport} from './ui/exportDialog';
 import {renderList} from './ui/list';
-import {initStyle, openStyle, closeStyle} from './ui/style';
+import {initStyle, openStyle, closeStyle, applyBackground} from './ui/style';
+import {buildBackup, mergeBooks, parseBackup} from './data/backup';
 
 await fontsReady;
 
@@ -121,6 +122,36 @@ $('menuBtn').addEventListener('click', (ev) => {
 menu.addEventListener('click', () => setMenu(false));
 document.addEventListener('click', () => setMenu(false));
 $('openStyle').addEventListener('click', openStyle);
+
+$('exportBackup').addEventListener('click', () => {
+  const name = `verso-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  downloadBlob(new Blob([buildBackup(state.books, state.settings)], {type: 'application/json'}), name);
+  toast(`Backed up ${state.books.length} books.`);
+});
+$('importBackup').addEventListener('click', () => $('importFile').click());
+$<HTMLInputElement>('importFile').addEventListener('change', async (ev) => {
+  const input = ev.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const parsed = parseBackup(await file.text());
+    const ok = confirm(`Import ${parsed.books.length} books? Books with the same id on this shelf will be overwritten.`);
+    if (!ok) return;
+    if (state.sel) deselect();
+    const merged = mergeBooks(state.seeded ? [] : state.books, parsed.books);
+    state.books = merged.books;
+    if (parsed.settings) state.settings = parsed.settings;
+    persist();
+    applyBackground(state.settings.background);
+    shelf?.applySettings();
+    refresh();
+    const skipped = parsed.skipped ? `, skipped ${parsed.skipped} unreadable` : '';
+    toast(`Imported: ${merged.added} new, ${merged.updated} updated${skipped}.`);
+  } catch (err) {
+    toast(err instanceof Error ? err.message : 'Could not import that file.');
+  }
+});
 
 $('add').addEventListener('click', () => openForm(null));
 $('viewToggle').addEventListener('click', () => setListMode(!listMode));

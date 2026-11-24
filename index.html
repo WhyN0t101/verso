@@ -20,6 +20,9 @@
 <nav id="menu" class="hidden" aria-label="Menu">
   <button id="viewToggle">List view</button>
   <button id="openStyle">Style the shelf</button>
+  <button id="exportBackup">Export backup (JSON)</button>
+  <button id="importBackup">Import backup</button>
+  <input id="importFile" type="file" accept="application/json,.json" class="hidden">
 </nav>
 
 <div id="listView" class="hidden" role="list"></div>
@@ -111,6 +114,7 @@
     <img id="exImg" alt="Preview of the post image">
     <p id="exMsg"></p>
     <div class="row">
+      <button class="btn primary hidden" id="exShare">Share</button>
       <button class="btn primary" id="exDownload">Download PNG</button>
       <button class="btn" id="exCopy">Copy image</button>
       <button class="btn" id="exClose">Close</button>

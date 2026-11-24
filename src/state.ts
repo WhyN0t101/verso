@@ -11,10 +11,13 @@ export const state = {
   q: '',
   fmt: 'post' as 'post' | 'story' | 'square',
   editing: null as string | null,
+  /** Demo books not yet saved: an import replaces them instead of merging into them. */
+  seeded: !!stored.seeded,
 };
 
 let warned = false;
 export function persist(): void {
+  state.seeded = false;
   if (save({books: state.books, settings: state.settings})) {
     warned = false;
   } else if (!warned) {

@@ -26,6 +26,17 @@ async function render(): Promise<void> {
   url = URL.createObjectURL(out);
   $<HTMLImageElement>('exImg').src = url;
   $('exMsg').textContent = HELP;
+  updateShare();
+}
+
+const fileName = () => `${slug(book?.title ?? 'book')}-${state.fmt}.png`;
+const asFile = (b: Blob) => new File([b], fileName(), {type: 'image/png'});
+
+/** Share (the native sheet, with Instagram on phones) only appears where the browser can share files. */
+function updateShare(): void {
+  const can = !!blob && typeof navigator.canShare === 'function' && navigator.canShare({files: [asFile(blob)]});
+  $('exShare').classList.toggle('hidden', !can);
+  $('exDownload').classList.toggle('primary', !can);
 }
 
 export function openExport(b: Book): void {
@@ -43,9 +54,19 @@ export function initExport(): void {
     void render();
   });
   $('exClose').addEventListener('click', closeExport);
+  $('exShare').addEventListener('click', async () => {
+    if (!blob || !book) return;
+    try {
+      await navigator.share({files: [asFile(blob)], title: book.title});
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      console.warn('share failed', err);
+      $('exMsg').textContent = 'Sharing did not work here. Use Download PNG instead.';
+    }
+  });
   $('exDownload').addEventListener('click', () => {
     if (!blob || !book) return;
-    downloadBlob(blob, `${slug(book.title)}-${state.fmt}.png`);
+    downloadBlob(blob, fileName());
     $('exMsg').textContent = 'Saved. You can now post it.';
   });
   $('exCopy').addEventListener('click', async () => {
