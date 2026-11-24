@@ -1,4 +1,5 @@
 import {$} from '../util';
+import type {WallView} from '../scene/shelf';
 
 let onGo: (index: number) => void = () => undefined;
 
@@ -7,7 +8,9 @@ export function initDots(go: (index: number) => void): void {
 }
 
 /** One dot per bookcase; hidden when there is only one. Genre labels become tooltips when grouped. */
-export function renderDots(active: number, labels: (string | null)[]): void {
+export function renderDots(view: WallView): void {
+  const active = view.caseIndex;
+  const labels = Array.from({length: view.caseCount}, (_, i) => view.sections.find((s) => s.firstCase === i)?.name ?? null);
   const box = $('dots');
   box.classList.toggle('hidden', labels.length < 2);
   box.replaceChildren();

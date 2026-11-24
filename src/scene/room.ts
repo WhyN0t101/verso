@@ -3,8 +3,10 @@ import * as THREE from 'three';
 export interface RoomLayout {
   pitch: number;
   count: number;
-  /** Height of one bookcase. */
-  height: number;
+  /** World y of the floor under the bookcases. */
+  floorY: number;
+  /** World y of the top edge of each bookcase, fascia included. */
+  tops: number[];
   depth: number;
 }
 
@@ -58,10 +60,9 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void} {
   }
 
   return {
-    layout({pitch, count, height, depth}) {
+    layout({pitch, count, floorY, tops, depth}) {
       clear();
       const span = (count - 1) * pitch;
-      const floorY = -height / 2 - 0.31;
       const w = span + 90;
       const front = 18;
       const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, front + depth / 2), floorMat);
@@ -70,7 +71,7 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void} {
       group.add(plane);
       for (let i = 0; i < count; i++) {
         const x = i * pitch;
-        const y = height / 2 + 0.85;
+        const y = (tops[i] ?? 0) + 0.55;
         const z = -depth / 2 - 0.4;
         const bulb = new THREE.Mesh(bulbGeo, bulbMat);
         bulb.position.set(x, y, z);
