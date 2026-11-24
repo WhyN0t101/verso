@@ -1,5 +1,6 @@
 import type {Book} from '../types';
 import {TAU, clamp, hsl} from '../util';
+import {spineScheme, type SpineScheme} from './contrast';
 
 /** Literata: what a person wrote or a book owns (titles, notes, signage). Atkinson Hyperlegible Next: small interface text. */
 export const SERIF = 'Literata,Georgia,serif';
@@ -69,47 +70,59 @@ function newCanvas(W: number, H: number): [HTMLCanvasElement, CanvasRenderingCon
   return [c, g];
 }
 
+/** Starting lightness of a spine: the cover's own lightness when known, else spread by the book's pattern. */
+export function spineLightness(b: Book): number {
+  return b.tone ? clamp(Math.round(b.tone.l), 30, 62) : 34 + (b.pattern % 4) * 6;
+}
+
+/** Colours of a book's spine: base lightness nudged until the better of the two inks reads at 4.5:1 or more. */
+export function spineLook(b: Book): {h: number; s: number} & SpineScheme {
+  const p = paletteOf(b);
+  return {h: p.h, s: p.s, ...spineScheme(p.h, p.s, spineLightness(b))};
+}
+
 export function spineCanvas(b: Book): HTMLCanvasElement {
   const S = 400;
   const W = Math.round(b.w * S);
   const H = Math.round(b.h * S);
   const [c, g] = newCanvas(W, H);
-  const p = paletteOf(b);
+  const look = spineLook(b);
+  // The gradient moves away from the ink's colour, so shading never costs contrast.
+  const drift = look.ink === 'light' ? -9 : 9;
   const grd = g.createLinearGradient(0, 0, 0, H);
-  grd.addColorStop(0, hsl(p.h, p.s, 31));
-  grd.addColorStop(1, hsl(p.h, sat(p, 6), 19));
+  grd.addColorStop(0, hsl(look.h, look.s, look.l));
+  grd.addColorStop(1, hsl(look.h, look.s, look.l + drift));
   g.fillStyle = grd;
   g.fillRect(0, 0, W, H);
-  const acc = accOf(b);
-  g.fillStyle = acc;
+  g.fillStyle = look.inkCss;
+  g.globalAlpha = 0.85;
   g.fillRect(0, H * 0.05, W, 5);
   g.fillRect(0, H * 0.05 + 12, W, 2);
   g.fillRect(0, H * 0.95 - 6, W, 5);
   g.fillRect(0, H * 0.95 - 16, W, 2);
-  g.fillStyle = CREAM;
+  g.globalAlpha = 1;
   g.textBaseline = 'middle';
-  let fs = Math.min(W * 0.42, 56);
+  let fs = Math.min(W * 0.52, 76);
   g.font = `700 ${fs}px ${SERIF}`;
-  const maxT = H * 0.56;
-  while (g.measureText(b.title).width > maxT && fs > 12) {
+  const maxT = H * 0.62;
+  while (g.measureText(b.title).width > maxT && fs > 14) {
     fs -= 2;
     g.font = `700 ${fs}px ${SERIF}`;
   }
   g.save();
-  g.translate(W / 2, H * 0.12);
+  g.translate(W / 2, H * 0.1);
   g.rotate(Math.PI / 2);
   g.textAlign = 'left';
   g.fillText(b.title, 0, 0);
   g.restore();
   if (b.author) {
-    let f2 = Math.min(W * 0.3, 28);
+    let f2 = Math.min(W * 0.34, 34);
     g.font = `500 ${f2}px ${SANS}`;
     const maxA = H * 0.2;
-    while (g.measureText(b.author).width > maxA && f2 > 9) {
+    while (g.measureText(b.author).width > maxA && f2 > 11) {
       f2 -= 1;
       g.font = `500 ${f2}px ${SANS}`;
     }
-    g.fillStyle = acc;
     g.save();
     g.translate(W / 2, H * 0.9);
     g.rotate(Math.PI / 2);
@@ -117,13 +130,13 @@ export function spineCanvas(b: Book): HTMLCanvasElement {
     g.fillText(b.author, 0, 0);
     g.restore();
   }
-  const sh = g.createLinearGradient(0, 0, W, 0);
-  sh.addColorStop(0, 'rgba(0,0,0,.4)');
-  sh.addColorStop(0.22, 'rgba(0,0,0,0)');
-  sh.addColorStop(0.78, 'rgba(0,0,0,0)');
-  sh.addColorStop(1, 'rgba(0,0,0,.4)');
-  g.fillStyle = sh;
-  g.fillRect(0, 0, W, H);
+  // Dark gaps and a lit edge so each spine reads as its own object against its neighbours and the wood.
+  const gap = Math.max(6, Math.round(W * 0.05));
+  g.fillStyle = 'rgba(8,6,4,.7)';
+  g.fillRect(0, 0, gap, H);
+  g.fillRect(W - gap, 0, gap, H);
+  g.fillStyle = 'rgba(255,255,255,.22)';
+  g.fillRect(gap, 0, 2, H);
   return c;
 }
 

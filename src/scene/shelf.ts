@@ -4,7 +4,7 @@ import {state} from '../state';
 import {matches} from '../search';
 import {clamp, hsl, rng} from '../util';
 import {LIGHTS, WOODS, type WoodPreset} from '../presets';
-import {SERIF, drawCover, paletteOf, sat, spineCanvas} from '../textures/draw';
+import {SERIF, drawCover, paletteOf, sat, spineCanvas, spineLook} from '../textures/draw';
 import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
 import {tintFor} from './tint';
@@ -73,7 +73,7 @@ const WIDTHS = [3.6, 4.2, 4.8];
 const FASCIA_H = 0.6;
 const PLINTH_H = 0.3;
 /** Empty space around the framed bookcase: room for the lamp above and the floor below. */
-const VIEW_MARGIN = 0.9;
+const VIEW_MARGIN = 0.6;
 const HEADER_PX = 64;
 /** Height of the section bar plus its gap on screens narrower than the rail breakpoint. */
 const NARROW_BAR_PX = 64;
@@ -350,11 +350,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
 
   /** Flat colours of the cover, back board and spine before (or without) a texture. */
-  const faceColors = (p: ReturnType<typeof paletteOf>): [THREE.Color, THREE.Color, THREE.Color] => [
-    new THREE.Color(hsl(p.h, sat(p, 0), 28)),
-    new THREE.Color(hsl(p.h, sat(p, 0), 22)),
-    new THREE.Color(hsl(p.h, sat(p, 4), 25)),
-  ];
+  const faceColors = (b: Book): [THREE.Color, THREE.Color, THREE.Color] => {
+    const p = paletteOf(b);
+    const spine = spineLook(b);
+    return [new THREE.Color(hsl(p.h, sat(p, 0), 28)), new THREE.Color(hsl(p.h, sat(p, 0), 22)), new THREE.Color(hsl(spine.h, spine.s, spine.l))];
+  };
 
   function retone(b: Book): void {
     const e = entries.get(b.id);
@@ -368,7 +368,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       }
     }
     b.v++;
-    const [cover, back, spine] = faceColors(paletteOf(b));
+    const [cover, back, spine] = faceColors(b);
     e.base[MAT.cover]?.copy(cover);
     e.base[MAT.back]?.copy(back);
     e.base[MAT.spine]?.copy(spine);
@@ -496,15 +496,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const ox = caseX(c.index, pitch);
       const floor = baseY + BOARD + i * ROW_H;
       for (const {b, x: bx} of row) {
-        const p = paletteOf(b);
         const pages = () => new THREE.MeshStandardMaterial({color: 0xe9dfc8, roughness: 0.95});
         // Order follows BoxGeometry faces: +x cover, -x back board, +y, -y, +z spine, -z.
         const mats = [
-          new THREE.MeshStandardMaterial({color: faceColors(p)[0], roughness: 0.6}),
-          new THREE.MeshStandardMaterial({color: faceColors(p)[1], roughness: 0.7}),
+          new THREE.MeshStandardMaterial({color: faceColors(b)[0], roughness: 0.6}),
+          new THREE.MeshStandardMaterial({color: faceColors(b)[1], roughness: 0.7}),
           pages(),
           pages(),
-          new THREE.MeshStandardMaterial({color: faceColors(p)[2], roughness: 0.55}),
+          new THREE.MeshStandardMaterial({color: faceColors(b)[2], roughness: 0.55}),
           pages(),
         ];
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mats);
@@ -544,7 +543,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const topInset = HEADER_PX;
     const bottomInset = innerWidth <= 1000 ? NARROW_BAR_PX : 8;
     const free = Math.max(H - topInset - bottomInset, H * 0.5);
-    const dist = Math.max(((v.h * H) / free / 2) / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.1 + DEPTH / 2;
+    const dist = Math.max(((v.h * H) / free / 2) / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.06 + DEPTH / 2;
     // Content sits lower than the screen centre when the top inset is larger than the bottom one.
     const worldPerPx = (2 * dist * FOV_T) / H;
     return {dist, cy: v.cy + ((topInset - bottomInset) / 2) * worldPerPx};
