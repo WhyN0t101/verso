@@ -23,7 +23,6 @@ const MAX_COVER_BYTES = 4 * 1024 * 1024;
 const COVER_SIZES = new Set(['S', 'M', 'L']);
 
 const CDN = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
-const CDN_SHORT = 'public, max-age=300, s-maxage=3600';
 const COVER_CC = 'public, max-age=604800, s-maxage=2592000, immutable';
 
 /* ---------- text helpers ---------- */
@@ -66,14 +65,17 @@ async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
   return r.json();
 }
 
-/** Workers Cache API in front of an upstream call. Only 200s are stored; the response's Cache-Control sets the TTL. */
+/**
+ * Workers Cache API in front of an upstream call. Only 200s are stored; the response's Cache-Control sets the TTL.
+ * A `private` response is never stored: it depends on caller-supplied input.
+ */
 async function withCache(keyUrl: string, ctx: Ctx, produce: () => Promise<Response>): Promise<Response> {
   const cache = (caches as unknown as {default: Cache}).default;
   const key = new Request(keyUrl, {method: 'GET'});
   const hit = await cache.match(key);
   if (hit) return hit;
   const res = await produce();
-  if (res.status === 200) ctx.waitUntil(cache.put(key, res.clone()));
+  if (res.status === 200 && !res.headers.get('Cache-Control')?.includes('private')) ctx.waitUntil(cache.put(key, res.clone()));
   return res;
 }
 
@@ -163,11 +165,12 @@ async function handleSearch(url: URL, env: Env, ctx: Ctx): Promise<Response> {
       if (!/^OL\d+W$/.test(work)) return json({error: 'bad work id'}, 400);
       const title = (url.searchParams.get('title') ?? '').slice(0, 150);
       const author = (url.searchParams.get('author') ?? '').slice(0, 100);
-      // Title and author only help the Google fallback, so they are left out of the cache key.
       return await withCache(`${url.origin}/api/search?work=${work}`, ctx, async () => {
         const d = await workDetail(work, title, author, env.GOOGLE_BOOKS_API_KEY);
-        // An empty summary is retried sooner, in case Google was only briefly unavailable.
-        return json(d, 200, d.summary ? CDN : CDN_SHORT);
+        if (d.source === 'openlibrary') return json(d, 200, CDN);
+        // Google's answer depends on the caller's title/author, so it must not be shared under the work-only key
+        // (anyone could otherwise plant a wrong summary for a work). Browser-private cache only.
+        return json(d, 200, 'private, max-age=300');
       });
     }
     if (q.length < 2 || q.length > 120) return json({error: 'q must be 2-120 characters'}, 400);

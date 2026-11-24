@@ -45,6 +45,16 @@ describe('/api/search work mode', () => {
     expect(urls.some((u) => u.includes('key=test-key'))).toBe(true);
   });
 
+  it('does not let caller-supplied title/author poison the shared cache for a work', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((u) =>
+      String(u).includes('openlibrary.org') ? json({subjects: []}) : json({items: [{volumeInfo: {description: 'Planted summary.'}}]}),
+    );
+    const a = await call('/api/search?work=OL4444W&title=Totally%20Wrong%20Book', {GOOGLE_BOOKS_API_KEY: 'k'});
+    expect(a.body).toMatchObject({source: 'google'});
+    expect(a.headers.get('Cache-Control')).toContain('private');
+    expect(cache.store.size).toBe(0);
+  });
+
   it('skips Google Books quietly when no key is configured', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({subjects: ['Poetry']}));
     const r = await call('/api/search?work=OL3333W&title=Needs%20Fallback');
