@@ -1,0 +1,61 @@
+import type {Book} from '../types';
+import {state} from '../state';
+import {$, downloadBlob, slug} from '../util';
+import {drawCard, type CardFormat} from '../export/card';
+import {fontsReady} from '../fonts';
+
+const HELP = 'If a download is blocked here, press and hold the image (or right click it) and choose Save image.';
+let book: Book | null = null;
+let blob: Blob | null = null;
+let url: string | null = null;
+let renderId = 0;
+
+async function render(): Promise<void> {
+  if (!book) return;
+  const id = ++renderId;
+  await fontsReady;
+  const canvas = drawCard(book, state.fmt, null);
+  const out = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+  if (id !== renderId || !out) return;
+  blob = out;
+  if (url) URL.revokeObjectURL(url);
+  url = URL.createObjectURL(out);
+  $<HTMLImageElement>('exImg').src = url;
+}
+
+export function openExport(b: Book): void {
+  book = b;
+  $('exMsg').textContent = HELP;
+  $('export').classList.remove('hidden');
+  void render();
+}
+
+export function initExport(): void {
+  $('exSeg').addEventListener('click', (ev) => {
+    const fmt = (ev.target as HTMLElement).dataset.fmt as CardFormat | undefined;
+    if (!fmt) return;
+    state.fmt = fmt;
+    [...$('exSeg').children].forEach((el) => el.classList.toggle('on', (el as HTMLElement).dataset.fmt === fmt));
+    void render();
+  });
+  $('exClose').addEventListener('click', closeExport);
+  $('exDownload').addEventListener('click', () => {
+    if (!blob || !book) return;
+    downloadBlob(blob, `${slug(book.title)}-${state.fmt}.png`);
+    $('exMsg').textContent = 'Saved. You can now post it.';
+  });
+  $('exCopy').addEventListener('click', async () => {
+    if (!blob) return;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+      $('exMsg').textContent = 'Image copied. Paste it into Instagram, Messages or any editor.';
+    } catch (err) {
+      console.warn('clipboard write failed', err);
+      $('exMsg').textContent = 'Copy is blocked in this view. ' + HELP;
+    }
+  });
+}
+
+export function closeExport(): void {
+  $('export').classList.add('hidden');
+}

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Verso</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="description" content="Verso: a 3D bookshelf for your reading life.">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<header id="bar">
+  <div class="brand">Verso<small id="count"></small></div>
+  <input id="q" type="search" placeholder="Search title, author or genre" autocomplete="off" aria-label="Search books">
+  <button class="btn" id="viewToggle">List</button>
+  <button class="btn primary" id="add">Add book</button>
+</header>
+
+<div id="listView" class="hidden" role="list"></div>
+
+<div id="hint">Click a book to pull it out. Drag or scroll to move along the shelf.</div>
+<div id="empty" class="hidden">Your shelf is empty. Add your first book to start.</div>
+<div id="tip"></div>
+<div id="toast" role="status"></div>
+
+<aside id="panel" aria-live="polite">
+  <button id="close" aria-label="Close book">&times;</button>
+  <span class="pill" id="pGenre"></span>
+  <h2 id="pTitle"></h2>
+  <div id="pAuthor"></div>
+  <div id="pStars" aria-label="Rating"></div>
+  <h3>Summary</h3>
+  <p id="pSummary"></p>
+  <h3>Your notes and opinion</h3>
+  <textarea id="pNotes" placeholder="What did you think? A favourite quote, how it made you feel, who should read it."></textarea>
+  <div class="row">
+    <button class="btn primary" id="pExport">Create post image</button>
+    <button class="btn" id="pEdit">Edit details</button>
+    <button class="btn danger" id="pDelete">Delete</button>
+  </div>
+</aside>
+
+<div class="overlay hidden" id="modal">
+  <form class="card" id="form" autocomplete="off">
+    <h2 id="formTitle">Add a book</h2>
+    <label for="fTitle">Title</label>
+    <input id="fTitle" required maxlength="90">
+    <label for="fAuthor">Author</label>
+    <input id="fAuthor" maxlength="70">
+    <div class="two">
+      <div>
+        <label for="fGenre">Genre</label>
+        <input id="fGenre" list="genres" maxlength="30" placeholder="e.g. Fantasy">
+        <datalist id="genres"></datalist>
+      </div>
+      <div>
+        <label for="fYear">Year</label>
+        <input id="fYear" inputmode="numeric" maxlength="4" placeholder="optional">
+      </div>
+    </div>
+    <label for="fSummary">Summary</label>
+    <textarea id="fSummary" rows="4" maxlength="500"></textarea>
+    <div class="row">
+      <button class="btn primary" type="submit">Save</button>
+      <button class="btn" type="button" id="fCancel">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<div class="overlay hidden" id="export">
+  <div class="card" id="exCard">
+    <h2>Post image</h2>
+    <div class="seg" id="exSeg">
+      <button class="btn on" data-fmt="post">Post 4:5</button>
+      <button class="btn" data-fmt="story">Story 9:16</button>
+      <button class="btn" data-fmt="square">Square 1:1</button>
+    </div>
+    <img id="exImg" alt="Preview of the post image">
+    <p id="exMsg"></p>
+    <div class="row">
+      <button class="btn primary" id="exDownload">Download PNG</button>
+      <button class="btn" id="exCopy">Copy image</button>
+      <button class="btn" id="exClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

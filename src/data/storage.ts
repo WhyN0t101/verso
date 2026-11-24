@@ -1,0 +1,53 @@
+import type {Book, Settings} from '../types';
+import {sanitizeBook, makeBook} from './books';
+import {SEED} from './seed';
+import {sanitizeSettings, DEFAULT_SETTINGS} from './settings';
+
+const KEY = 'verso.v1';
+const LEGACY_KEY = 'myshelf.v1';
+
+export interface Stored {
+  books: Book[];
+  settings: Settings;
+}
+
+let memory: Stored | null = null;
+
+function readKey(key: string): unknown {
+  try {
+    const s = localStorage.getItem(key);
+    return s ? JSON.parse(s) : null;
+  } catch (err) {
+    console.warn(`could not read ${key}`, err);
+    return null;
+  }
+}
+
+const cleanBooks = (a: unknown[]): Book[] => a.map(sanitizeBook).filter((b): b is Book => !!b);
+
+export function load(): Stored {
+  const cur = readKey(KEY) as {books?: unknown[]; settings?: unknown} | null;
+  if (cur && Array.isArray(cur.books)) {
+    return {books: cleanBooks(cur.books), settings: sanitizeSettings(cur.settings)};
+  }
+  // The prototype stored a bare array under another key; carry that shelf over.
+  const legacy = readKey(LEGACY_KEY);
+  if (Array.isArray(legacy)) {
+    const books = cleanBooks(legacy);
+    if (books.length) return {books, settings: {...DEFAULT_SETTINGS}};
+  }
+  if (memory) return memory;
+  return {books: SEED.map(makeBook), settings: {...DEFAULT_SETTINGS}};
+}
+
+/** Returns false when the browser refused the write (private mode, quota). */
+export function save(data: Stored): boolean {
+  memory = data;
+  try {
+    localStorage.setItem(KEY, JSON.stringify({version: 1, ...data}));
+    return true;
+  } catch (err) {
+    console.warn('could not save to localStorage', err);
+    return false;
+  }
+}
