@@ -4,6 +4,7 @@ import {state} from '../state';
 import {matches} from '../search';
 import {clamp, hsl} from '../util';
 import {drawCover, paletteOf, sat, spineCanvas} from '../textures/draw';
+import {loadCover} from '../covers';
 
 export interface ShelfHooks {
   /** Book id picked by a click, or null for a click on empty space. */
@@ -115,6 +116,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   const entries = new Map<string, Entry>();
   const pickables: THREE.Mesh[] = [];
   const texCache = new Map<string, THREE.Texture>();
+  /** Cover textures whose real image has been requested, so each is fetched once. */
+  const realCovers = new Set<string>();
   const pointer = {x: 0, y: 0, sx: 0, sy: 0};
 
   function getTex(b: Book, kind: 'spine' | 'cover'): THREE.Texture {
@@ -137,6 +140,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       if (!live.has(prefix)) {
         t.dispose();
         texCache.delete(k);
+        realCovers.delete(k);
       }
     }
   }
@@ -182,6 +186,24 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     m.needsUpdate = true;
     e.base[MAT.cover]?.set(0xffffff);
     e.hasCover = true;
+    const b = e.b;
+    const k = `${b.id}:${b.v}:cover`;
+    if (!b.cover || realCovers.has(k)) return;
+    realCovers.add(k);
+    // The generated cover shows immediately; the real one replaces it when it arrives.
+    void loadCover(b.cover).then((img) => {
+      if (!img || !texCache.has(k)) return;
+      const t = new THREE.Texture(img);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = maxAniso;
+      t.needsUpdate = true;
+      texCache.get(k)?.dispose();
+      texCache.set(k, t);
+      if (entries.get(b.id) === e) {
+        m.map = t;
+        m.needsUpdate = true;
+      }
+    });
   }
 
   function buildShelf(): void {

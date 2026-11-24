@@ -3,6 +3,7 @@ import {state} from '../state';
 import {$, downloadBlob, slug} from '../util';
 import {drawCard, type CardFormat} from '../export/card';
 import {fontsReady} from '../fonts';
+import {loadCover} from '../covers';
 
 const HELP = 'If a download is blocked here, press and hold the image (or right click it) and choose Save image.';
 let book: Book | null = null;
@@ -13,19 +14,22 @@ let renderId = 0;
 async function render(): Promise<void> {
   if (!book) return;
   const id = ++renderId;
+  $('exMsg').textContent = 'Preparing your image…';
   await fontsReady;
-  const canvas = drawCard(book, state.fmt, null);
+  const cover = book.cover ? await loadCover(book.cover) : null;
+  if (id !== renderId) return;
+  const canvas = drawCard(book, state.fmt, cover);
   const out = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
   if (id !== renderId || !out) return;
   blob = out;
   if (url) URL.revokeObjectURL(url);
   url = URL.createObjectURL(out);
   $<HTMLImageElement>('exImg').src = url;
+  $('exMsg').textContent = HELP;
 }
 
 export function openExport(b: Book): void {
   book = b;
-  $('exMsg').textContent = HELP;
   $('export').classList.remove('hidden');
   void render();
 }

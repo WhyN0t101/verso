@@ -69,3 +69,6 @@ h3{font:600 11px Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;
 .results button:hover,.results button:focus-visible{background:rgba(255,255,255,.1);outline:none}
 .res-title{font:700 15px "Playfair Display",Georgia,serif}
 .res-meta{color:var(--mute);font-size:13px}
+.coverrow{display:flex;gap:12px;align-items:center;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.04);font-size:13px;color:var(--mute)}
+.coverrow img{width:56px;height:84px;object-fit:cover;border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.5);background:#000}
+.coverrow .btn{margin-top:8px;padding:6px 10px;font-size:13px}

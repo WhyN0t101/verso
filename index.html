@@ -48,6 +48,11 @@
     <input id="fSearch" type="search" placeholder="Start typing a title or author" autocomplete="off">
     <p id="fStatus" class="status hidden" role="status"></p>
     <ul id="fResults" class="results hidden"></ul>
+    <div id="fCoverRow" class="coverrow hidden">
+      <img id="fCoverImg" alt="Cover preview">
+      <div><span id="fCoverNote">Cover found. The book on your shelf takes its colour from it.</span>
+      <button class="btn" type="button" id="fCoverRemove">Remove cover</button></div>
+    </div>
     <label for="fTitle">Title</label>
     <input id="fTitle" required maxlength="90">
     <label for="fAuthor">Author</label>

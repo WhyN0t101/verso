@@ -1,7 +1,8 @@
-import type {Book, BookDraft} from '../types';
+import type {Book, BookDraft, Tone} from '../types';
 import {$} from '../util';
 import {GENRES} from '../../shared/genres';
 import {fetchWork, searchBooks, type SearchResult} from '../api';
+import {dominantTone, loadCover} from '../covers';
 
 type Input = HTMLInputElement | HTMLTextAreaElement;
 const f = (id: string) => $<Input>(id);
@@ -13,6 +14,16 @@ let editing: string | null = null;
 let searchTimer = 0;
 let searchCtl: AbortController | null = null;
 let workCtl: AbortController | null = null;
+interface CoverChoice {
+  url: string;
+  tone?: Tone;
+  /** Only set for a freshly picked cover; lets the 3D book take the cover's proportions. */
+  aspect?: number;
+}
+let cover: CoverChoice | null = null;
+/** Resolves when the picked cover's colour has been read. */
+let coverReady: Promise<void> = Promise.resolve();
+
 /** Fields the user typed in since the last pick; auto-fill never overwrites these. */
 const touched = new Set<string>();
 
@@ -59,6 +70,28 @@ async function runSearch(q: string): Promise<void> {
   }
 }
 
+function showCover(): void {
+  $('fCoverRow').classList.toggle('hidden', !cover);
+  if (cover) $<HTMLImageElement>('fCoverImg').src = cover.url;
+}
+
+function pickCover(url: string | null): void {
+  cover = url ? {url} : null;
+  showCover();
+  if (!url) return;
+  coverReady = loadCover(url).then((img) => {
+    if (cover?.url !== url) return;
+    if (!img) {
+      cover = null;
+      showCover();
+      setStatus('That book has no usable cover. A generated one will be used.');
+      return;
+    }
+    cover.tone = dominantTone(img);
+    cover.aspect = img.naturalWidth / img.naturalHeight;
+  });
+}
+
 /** Fills a field unless the user already edited it. */
 function fill(id: string, value: string): void {
   if (value && !touched.has(id)) f(id).value = value;
@@ -73,6 +106,7 @@ async function pick(r: SearchResult): Promise<void> {
   f('fYear').value = r.year ? String(r.year) : '';
   f('fGenre').value = r.genre;
   f('fSummary').value = '';
+  pickCover(r.cover);
   workCtl?.abort();
   const ctl = (workCtl = new AbortController());
   setStatus('Looking up the summary…');
@@ -107,21 +141,28 @@ export function initForm(onSave: (draft: BookDraft, editingId: string | null) =>
   for (const id of ['fTitle', 'fAuthor', 'fYear', 'fGenre', 'fSummary']) f(id).addEventListener('input', () => touched.add(id));
 
   $('fCancel').addEventListener('click', closeForm);
+  $('fCoverRemove').addEventListener('click', () => pickCover(null));
   $('form').addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const title = f('fTitle').value.trim();
-    if (!title) return;
-    const year = Number.parseInt(f('fYear').value, 10);
-    const draft: BookDraft = {
-      title,
-      author: f('fAuthor').value,
-      genre: f('fGenre').value,
-      summary: f('fSummary').value,
-      ...(Number.isFinite(year) && year > 0 ? {year} : {}),
-    };
-    closeForm();
-    onSaveCb(draft, editing);
+    void submit();
   });
+}
+
+async function submit(): Promise<void> {
+  const title = f('fTitle').value.trim();
+  if (!title) return;
+  await coverReady;
+  const year = Number.parseInt(f('fYear').value, 10);
+  const draft: BookDraft = {
+    title,
+    author: f('fAuthor').value,
+    genre: f('fGenre').value,
+    summary: f('fSummary').value,
+    ...(Number.isFinite(year) && year > 0 ? {year} : {}),
+    ...(cover ? {cover: cover.url, ...(cover.tone ? {tone: cover.tone} : {}), ...(cover.aspect ? {aspect: cover.aspect} : {})} : {}),
+  };
+  closeForm();
+  onSaveCb(draft, editing);
 }
 
 export function closeForm(): void {
@@ -143,6 +184,9 @@ export function openForm(b: Book | null): void {
   f('fYear').value = b?.year ? String(b.year) : '';
   f('fGenre').value = b && b.genre !== 'Unsorted' ? b.genre : '';
   f('fSummary').value = b?.summary ?? '';
+  cover = b?.cover ? {url: b.cover, ...(b.tone ? {tone: b.tone} : {})} : null;
+  coverReady = Promise.resolve();
+  showCover();
   $('modal').classList.remove('hidden');
   setTimeout(() => f(b ? 'fTitle' : 'fSearch').focus(), 30);
 }
