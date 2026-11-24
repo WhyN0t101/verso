@@ -1,6 +1,6 @@
 import type {Book} from '../types';
 import {$} from '../util';
-import {STATUS_LABELS} from '../data/books';
+import {STATUS_LABELS, applyStatus, isoDate, todayIso} from '../data/books';
 import type {Status} from '../types';
 
 export interface PanelHooks {
@@ -46,13 +46,17 @@ function renderStatus(b: Book): void {
     chip.textContent = STATUS_LABELS[id];
     chip.setAttribute('aria-pressed', String(b.status === id));
     chip.addEventListener('click', () => {
-      if (b.status === id) delete b.status;
-      else b.status = id;
+      applyStatus(b, b.status === id ? undefined : id);
       hooks.onChange();
       renderStatus(b);
     });
     box.appendChild(chip);
   }
+  const row = $('pFinishedRow');
+  row.classList.toggle('hidden', b.status !== 'finished');
+  const input = $<HTMLInputElement>('pFinished');
+  input.max = todayIso();
+  input.value = b.finishedOn ?? '';
 }
 
 function resetDelete(): void {
@@ -69,6 +73,13 @@ export function initPanel(h: PanelHooks): void {
     current.notes = (ev.target as HTMLTextAreaElement).value;
     clearTimeout(saveTimer);
     saveTimer = window.setTimeout(h.onChange, 300);
+  });
+  $('pFinished').addEventListener('change', (ev) => {
+    if (!current || current.status !== 'finished') return;
+    const date = isoDate((ev.target as HTMLInputElement).value);
+    if (date) current.finishedOn = date;
+    else delete current.finishedOn;
+    h.onChange();
   });
   $('pEdit').addEventListener('click', () => current && h.onEdit(current));
   $('pExport').addEventListener('click', () => current && h.onExport(current));

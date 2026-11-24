@@ -1,6 +1,7 @@
 import type {Book} from '../types';
 import {SANS, SERIF, drawCover, letterSpacing, roundRect, wrapAll, wrapLines} from '../textures/draw';
 import {cardQuote, fitCover} from './layout';
+import {finishedLabel} from '../data/books';
 import {themeById, type ThemeId} from './themes';
 
 export type CardFormat = 'post' | 'story' | 'square';
@@ -57,9 +58,11 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   const titleLines = wrapLines(g, b.title, textW, maxTL);
   g.font = `500 ${square ? 30 : 34}px ${SANS}`;
   const authorLines = b.author ? wrapLines(g, 'by ' + b.author, textW, 2) : [];
+  const finished = finishedLabel(b.finishedOn);
+  const finishedH = finished ? (square ? 40 : 46) : 0;
   const starsH = b.rating > 0 ? (square ? 66 : 70) : 0;
   const authorH = authorLines.length * (square ? 40 : 44);
-  const headH = starsH + titleLines.length * tfs * 1.14 + 6 + authorH + 22 + 62;
+  const headH = starsH + titleLines.length * tfs * 1.14 + 6 + authorH + finishedH + 22 + 62;
 
   g.font = `italic 400 ${nfs}px ${SERIF}`;
   const wantLines = quote ? Math.min(wrapAll(g, quote.text, textW).length, fmt === 'story' ? 10 : 7) : 0;
@@ -134,6 +137,14 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   for (const l of authorLines) {
     g.fillText(l, tx, y + 10);
     y += square ? 40 : 44;
+  }
+  if (finished) {
+    g.font = `500 ${square ? 26 : 28}px ${SANS}`;
+    letterSpacing(g, 2);
+    g.fillStyle = acc;
+    g.fillText(finished.toUpperCase(), tx, y + 16);
+    letterSpacing(g, 0);
+    y += finishedH;
   }
   y += 22;
   g.fillStyle = acc;

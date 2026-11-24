@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {paletteOf} from '../src/textures/draw';
 import {buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
-import {makeBook, sanitizeBook} from '../src/data/books';
+import {applyStatus, finishedLabel, isoDate, makeBook, sanitizeBook, todayIso} from '../src/data/books';
 import {DEFAULT_SETTINGS, sanitizeSettings} from '../src/data/settings';
 
 const book = (title: string) => makeBook({title, author: 'A', genre: 'Fantasy', summary: 's'});
@@ -100,5 +100,49 @@ describe('stored tone', () => {
     const b = parseBackup(old).books[0]!;
     expect(b.tone).toBeUndefined();
     expect(paletteOf(b).h).toBe(77);
+  });
+});
+
+describe('finishedOn', () => {
+  const day = new Date(2026, 3, 9); // 9 April 2026, local time
+
+  it('formats a valid day and rejects anything else', () => {
+    expect(finishedLabel('2026-04-09')).toBe('Finished April 2026');
+    expect(finishedLabel('2026-02-30')).toBe('');
+    expect(finishedLabel('April')).toBe('');
+    expect(finishedLabel(undefined)).toBe('');
+    expect(isoDate('2024-02-29')).toBe('2024-02-29');
+    expect(isoDate('2026-13-01')).toBeNull();
+    expect(todayIso(day)).toBe('2026-04-09');
+  });
+
+  it('is stamped when a book becomes finished, kept on a repeat, and dropped when it leaves finished', () => {
+    const b = book('F');
+    applyStatus(b, 'finished', '2026-04-09');
+    expect(b).toMatchObject({status: 'finished', finishedOn: '2026-04-09'});
+    b.finishedOn = '2026-01-15'; // edited by hand
+    applyStatus(b, 'finished', '2026-05-01');
+    expect(b.finishedOn).toBe('2026-01-15');
+    applyStatus(b, 'reading');
+    expect(b).not.toHaveProperty('finishedOn');
+    applyStatus(b, undefined);
+    expect(b).not.toHaveProperty('status');
+  });
+
+  it('round trips through a backup, and old data without it still imports', () => {
+    const b = book('G');
+    applyStatus(b, 'finished', '2026-04-09');
+    expect(parseBackup(buildBackup([b], DEFAULT_SETTINGS)).books[0]).toMatchObject({status: 'finished', finishedOn: '2026-04-09'});
+    const old = JSON.stringify({app: 'verso', version: 1, books: [{title: 'Old finished', status: 'finished'}, {title: 'Old plain'}]});
+    const [a, c] = parseBackup(old).books;
+    expect(a).toMatchObject({title: 'Old finished', status: 'finished'});
+    expect(a).not.toHaveProperty('finishedOn');
+    expect(c).not.toHaveProperty('finishedOn');
+  });
+
+  it('ignores a bad date and a date on a book that is not finished', () => {
+    expect(sanitizeBook({title: 'X', status: 'finished', finishedOn: 'yesterday'})).not.toHaveProperty('finishedOn');
+    expect(sanitizeBook({title: 'Y', status: 'reading', finishedOn: '2026-04-09'})).not.toHaveProperty('finishedOn');
+    expect(sanitizeBook({title: 'Z', finishedOn: '2026-04-09'})).not.toHaveProperty('finishedOn');
   });
 });

@@ -13,6 +13,8 @@ export interface Book {
   rating: number;
   /** Absent on books saved before reading status existed. */
   status?: Status;
+  /** Calendar day (YYYY-MM-DD) the book was finished. Only kept while the status is finished. */
+  finishedOn?: string;
   year?: number;
   /** Same-origin proxy path, e.g. /api/cover?id=123 */
   cover?: string;

@@ -4,6 +4,37 @@ import {clamp, hash, rng} from '../util';
 export const UNSORTED = 'Unsorted';
 
 export const STATUS_LABELS: Record<Status, string> = {wishlist: 'Wishlist', reading: 'Reading', finished: 'Finished'};
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The value when it is a real calendar day written YYYY-MM-DD, else null. */
+export function isoDate(v: unknown): string | null {
+  const m = typeof v === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(v) : null;
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const real = new Date(Date.UTC(y, mo - 1, d));
+  return real.getUTCFullYear() === y && real.getUTCMonth() === mo - 1 && real.getUTCDate() === d ? (v as string) : null;
+}
+
+/** Today in the reader's own calendar, not UTC. */
+export function todayIso(now = new Date()): string {
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+
+/** "Finished April 2026", or '' when there is no valid date. */
+export function finishedLabel(iso: string | undefined): string {
+  const ok = isoDate(iso);
+  return ok ? `Finished ${MONTHS[Number(ok.slice(5, 7)) - 1]} ${ok.slice(0, 4)}` : '';
+}
+
+/** Sets or clears the reading status. Finishing stamps today unless a date is already there; leaving finished drops it. */
+export function applyStatus(b: Book, status: Status | undefined, today = todayIso()): void {
+  if (status) b.status = status;
+  else delete b.status;
+  if (status === 'finished') b.finishedOn ??= today;
+  else delete b.finishedOn;
+}
+
 export const isStatus = (v: unknown): v is Status => typeof v === 'string' && Object.hasOwn(STATUS_LABELS, v);
 
 export function makeBook(d: BookDraft): Book {
@@ -86,6 +117,8 @@ export function sanitizeBook(x: unknown): Book | null {
     v: 1,
   };
   if (isStatus(o.status)) book.status = o.status;
+  const finishedOn = isoDate(o.finishedOn);
+  if (book.status === 'finished' && finishedOn) book.finishedOn = finishedOn;
   if (typeof o.year === 'number' && Number.isFinite(o.year)) book.year = Math.round(o.year);
   // Only same-origin proxy paths are accepted so an imported file cannot point the canvas at foreign images.
   if (typeof o.cover === 'string' && o.cover.startsWith('/api/cover?')) book.cover = o.cover;
