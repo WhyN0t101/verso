@@ -64,7 +64,12 @@ async function fetchImage(url: string, signal: AbortSignal): Promise<Outcome> {
 
 interface InFlight {
   promise: Promise<HTMLImageElement | null>;
+  /** Stops the fetch itself. */
   ctl: AbortController;
+  /** Stops only the wait for a slot, used to move a queued request to a faster lane. */
+  queueCtl: AbortController;
+  inBackground: boolean;
+  started: boolean;
   /** Callers still interested. Callers without a signal never leave. */
   users: number;
 }
@@ -78,33 +83,22 @@ export interface LoadOptions {
   background?: boolean;
 }
 
+const isAbort = (err: unknown): boolean => err instanceof DOMException && err.name === 'AbortError';
+
 /**
  * Loads a cover from our own /api/cover proxy (same origin, so canvases stay untainted). Identical urls share
  * one request. Resolves null when the cover is missing, unusable, cancelled or failed, so callers use the
  * generated cover; only definitive answers are remembered, so a cancelled or failed load can be retried.
+ *
+ * A caller that is not background never waits behind background work: it joins the request when it is
+ * already running, and moves it to the interactive lane when it is still waiting for a background slot.
  */
 export function loadCover(url: string, opts: LoadOptions = {}): Promise<HTMLImageElement | null> {
   if (opts.signal?.aborted) return Promise.resolve(null);
   if (settled.has(url)) return Promise.resolve(settled.get(url) ?? null);
   let entry = inflight.get(url);
-  if (!entry) {
-    const ctl = new AbortController();
-    const lane = opts.background ? background : interactive;
-    const promise = lane(() => fetchImage(url, ctl.signal), ctl.signal)
-      .then((o) => {
-        if (o.final) settled.set(url, o.img);
-        return o.img;
-      })
-      .catch((err: unknown) => {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) console.warn('cover failed', url, err);
-        return null;
-      })
-      .finally(() => {
-        if (inflight.get(url)?.ctl === ctl) inflight.delete(url);
-      });
-    entry = {promise, ctl, users: 0};
-    inflight.set(url, entry);
-  }
+  if (!entry) entry = startRequest(url, !!opts.background);
+  else if (!opts.background && entry.inBackground && !entry.started) enqueue(url, entry, false);
   entry.users++;
   const e = entry;
   opts.signal?.addEventListener(
@@ -118,6 +112,48 @@ export function loadCover(url: string, opts: LoadOptions = {}): Promise<HTMLImag
     {once: true},
   );
   return e.promise;
+}
+
+const resolvers = new WeakMap<InFlight, (img: HTMLImageElement | null) => void>();
+
+function startRequest(url: string, inBackground: boolean): InFlight {
+  let resolve!: (img: HTMLImageElement | null) => void;
+  const promise = new Promise<HTMLImageElement | null>((r) => (resolve = r));
+  const entry: InFlight = {promise, ctl: new AbortController(), queueCtl: new AbortController(), inBackground, started: false, users: 0};
+  resolvers.set(entry, resolve);
+  inflight.set(url, entry);
+  void promise.finally(() => {
+    if (inflight.get(url) === entry) inflight.delete(url);
+  });
+  enqueue(url, entry, inBackground);
+  return entry;
+}
+
+/** Waits for a slot in the lane and fetches. Calling it again replaces the earlier wait (lane upgrade). */
+function enqueue(url: string, entry: InFlight, inBackground: boolean): void {
+  const resolve = resolvers.get(entry);
+  const previous = entry.queueCtl;
+  const mine = (entry.queueCtl = new AbortController());
+  entry.inBackground = inBackground;
+  const lane = inBackground ? background : interactive;
+  lane(
+    () => {
+      entry.started = true;
+      return fetchImage(url, entry.ctl.signal);
+    },
+    AbortSignal.any([mine.signal, entry.ctl.signal]),
+  )
+    .then((o) => {
+      if (o.final) settled.set(url, o.img);
+      resolve?.(o.img);
+    })
+    .catch((err: unknown) => {
+      // Replaced by a faster lane: that attempt settles the request.
+      if (isAbort(err) && entry.queueCtl !== mine) return;
+      if (!isAbort(err)) console.warn('cover failed', url, err);
+      resolve?.(null);
+    });
+  if (previous !== mine) previous.abort();
 }
 
 /** The proxy serves medium by default; the export card draws the cover large and asks for L. */

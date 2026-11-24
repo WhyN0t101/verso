@@ -155,4 +155,60 @@ describe('loadCover', () => {
     await Promise.all(Array.from({length: 5}, () => loadCover(url(), {background: true})));
     expect(peak).toBe(1);
   });
+
+  describe('priority', () => {
+    /** Fetches stay open until released, so slot usage can be observed. */
+    function gated() {
+      const open = new Map<string, () => void>();
+      const started: string[] = [];
+      fetchSpy.mockImplementation((u: string) => {
+        started.push(u);
+        return new Promise<Response>((resolve) => open.set(u, () => resolve(new Response(new Blob(['x']), {status: 200}))));
+      });
+      return {open, started};
+    }
+
+    it('a user load does not wait for a background slot', async () => {
+      const {open, started} = gated();
+      const busy = url();
+      const wanted = url();
+      void loadCover(busy, {background: true}); // takes the only background slot
+      const queued = loadCover(wanted, {background: true}); // waits behind it
+      await tick();
+      expect(started).toEqual([busy]);
+      const user = loadCover(wanted); // the user asks for the same cover
+      await tick();
+      expect(started).toEqual([busy, wanted]);
+      open.get(wanted)?.();
+      expect(await user).not.toBeNull();
+      expect(await queued).not.toBeNull(); // the queue's own caller gets the same result
+      open.get(busy)?.();
+      expect(started.filter((u) => u === wanted)).toHaveLength(1);
+    });
+
+    it('shares the request when the background fetch is already running', async () => {
+      const {open, started} = gated();
+      const u = url();
+      const bg = loadCover(u, {background: true});
+      await tick();
+      const user = loadCover(u);
+      await tick();
+      expect(started).toEqual([u]);
+      open.get(u)?.();
+      expect(await user).toBe(await bg);
+    });
+
+    it('user loads run while the background lane is full of other work', async () => {
+      const {open, started} = gated();
+      const bgUrl = url();
+      void loadCover(bgUrl, {background: true});
+      const mine = url();
+      const p = loadCover(mine);
+      await tick();
+      expect(started).toEqual([bgUrl, mine]);
+      open.get(mine)?.();
+      expect(await p).not.toBeNull();
+      open.get(bgUrl)?.();
+    });
+  });
 });
