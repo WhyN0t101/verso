@@ -13,9 +13,14 @@
 <header id="bar">
   <div class="brand">Verso<small id="count"></small></div>
   <input id="q" type="search" placeholder="Search title, author or genre" autocomplete="off" aria-label="Search books">
-  <button class="btn" id="viewToggle">List</button>
   <button class="btn primary" id="add">Add book</button>
+  <button class="btn icon" id="menuBtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false">&#8943;</button>
 </header>
+
+<nav id="menu" class="hidden" aria-label="Menu">
+  <button id="viewToggle">List view</button>
+  <button id="openStyle">Style the shelf</button>
+</nav>
 
 <div id="listView" class="hidden" role="list"></div>
 
@@ -75,6 +80,24 @@
       <button class="btn" type="button" id="fCancel">Cancel</button>
     </div>
   </form>
+</div>
+
+<div class="overlay hidden" id="style">
+  <div class="card" id="stCard">
+    <h2>Style the shelf</h2>
+    <label>Wood finish</label>
+    <div class="opts" id="stWood"></div>
+    <label>Lighting</label>
+    <div class="opts" id="stLight"></div>
+    <label>Background</label>
+    <div class="opts" id="stBg"></div>
+    <div class="row">
+      <label class="btn" for="stUpload">Upload an image</label>
+      <input id="stUpload" type="file" accept="image/*" class="hidden">
+      <button class="btn danger hidden" id="stRemoveImg" type="button">Remove image</button>
+      <button class="btn primary" id="stClose" type="button">Done</button>
+    </div>
+  </div>
 </div>
 
 <div class="overlay hidden" id="export">

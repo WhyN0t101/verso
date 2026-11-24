@@ -6,9 +6,10 @@ import {matches} from './search';
 import {$} from './util';
 import {createShelf, type Shelf} from './scene/shelf';
 import {initPanel, showPanel, hidePanel, fillPanel} from './ui/panel';
-import {initForm, openForm, setGenreOptions} from './ui/form';
+import {initForm, openForm, closeForm, setGenreOptions} from './ui/form';
 import {initExport, openExport, closeExport} from './ui/exportDialog';
 import {renderList} from './ui/list';
+import {initStyle, openStyle, closeStyle} from './ui/style';
 
 await fontsReady;
 
@@ -47,7 +48,7 @@ function setListMode(on: boolean): void {
   if (state.sel) deselect();
   $('listView').classList.toggle('hidden', !on);
   $('hint').classList.toggle('hidden', on);
-  $('viewToggle').textContent = on ? 'Shelf' : 'List';
+  $('viewToggle').textContent = on ? 'Shelf view' : 'List view';
   shelf?.setVisible(!on);
   refresh();
 }
@@ -106,6 +107,20 @@ initForm((draft, editingId) => {
 });
 
 initExport();
+initStyle(() => shelf?.applySettings());
+
+const menu = $('menu');
+const setMenu = (open: boolean): void => {
+  menu.classList.toggle('hidden', !open);
+  $('menuBtn').setAttribute('aria-expanded', String(open));
+};
+$('menuBtn').addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  setMenu(menu.classList.contains('hidden'));
+});
+menu.addEventListener('click', () => setMenu(false));
+document.addEventListener('click', () => setMenu(false));
+$('openStyle').addEventListener('click', openStyle);
 
 $('add').addEventListener('click', () => openForm(null));
 $('viewToggle').addEventListener('click', () => setListMode(!listMode));
@@ -125,7 +140,9 @@ $('q').addEventListener('keydown', (ev) => {
 
 addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
-  if (!$('modal').classList.contains('hidden')) $('modal').classList.add('hidden');
+  if (!menu.classList.contains('hidden')) setMenu(false);
+  else if (!$('style').classList.contains('hidden')) closeStyle();
+  else if (!$('modal').classList.contains('hidden')) closeForm();
   else if (!$('export').classList.contains('hidden')) closeExport();
   else if (state.sel) deselect();
   else if (state.q) {

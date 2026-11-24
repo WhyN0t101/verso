@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type {Book} from '../types';
 import {state} from '../state';
 import {matches} from '../search';
-import {clamp, hsl} from '../util';
+import {clamp, hsl, rng} from '../util';
+import {LIGHTS, WOODS, type WoodPreset} from '../presets';
 import {drawCover, paletteOf, sat, spineCanvas} from '../textures/draw';
 import {loadCover} from '../covers';
 
@@ -13,6 +14,8 @@ export interface ShelfHooks {
 }
 
 export interface Shelf {
+  /** Re-read wood and lighting presets from state.settings. */
+  applySettings(): void;
   /** Rebuild geometry from state.books (add, edit, delete). */
   rebuild(): void;
   /** Pan to the last row, where a newly added book sits. */
@@ -71,18 +74,19 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   fillL.position.set(7, 3, 8);
   scene.add(hemi, key, key.target, fillL);
 
-  function woodTexture(): THREE.CanvasTexture {
+  function woodTexture(w: WoodPreset): THREE.CanvasTexture {
     const c = document.createElement('canvas');
     c.width = c.height = 512;
     const g = c.getContext('2d');
     if (!g) throw new Error('2D canvas unavailable');
-    g.fillStyle = '#5b3b25';
+    g.fillStyle = w.base;
     g.fillRect(0, 0, 512, 512);
+    const rand = rng(7); // seeded so the grain is the same on every load
     for (let i = 0; i < 300; i++) {
-      const y = Math.random() * 512;
-      const dark = Math.random() < 0.65;
-      g.strokeStyle = dark ? `rgba(25,12,5,${0.05 + Math.random() * 0.14})` : `rgba(150,100,60,${0.04 + Math.random() * 0.08})`;
-      g.lineWidth = 0.6 + Math.random() * 2.4;
+      const y = rand() * 512;
+      const dark = rand() < 0.65;
+      g.strokeStyle = dark ? `rgba(${w.dark},${0.05 + rand() * 0.14})` : `rgba(${w.light},${0.04 + rand() * 0.08})`;
+      g.lineWidth = 0.6 + rand() * 2.4;
       g.beginPath();
       g.moveTo(0, y);
       for (let x = 0; x <= 512; x += 64) g.lineTo(x, y + Math.sin(x * 0.02 + i) * 3);
@@ -94,9 +98,27 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     t.anisotropy = maxAniso;
     return t;
   }
-  const wood = woodTexture();
+  let wood = woodTexture(WOODS.walnut);
   const woodMat = new THREE.MeshStandardMaterial({map: wood, roughness: 0.72, metalness: 0});
   const backMat = new THREE.MeshStandardMaterial({map: wood, color: 0x7a6050, roughness: 0.9});
+
+  function applySettings(): void {
+    const {wood: woodId, light: lightId} = state.settings;
+    const old = wood;
+    wood = woodTexture(WOODS[woodId]);
+    woodMat.map = wood;
+    backMat.map = wood;
+    old.dispose();
+    const L = LIGHTS[lightId];
+    hemi.color.setHex(L.hemiSky);
+    hemi.groundColor.setHex(L.hemiGround);
+    hemi.intensity = L.hemi * LIGHT_UNIT;
+    key.color.setHex(L.keyColor);
+    key.intensity = L.key * LIGHT_UNIT;
+    fillL.color.setHex(L.fillColor);
+    fillL.intensity = L.fill * LIGHT_UNIT;
+  }
+  applySettings();
 
   const frame = new THREE.Group();
   const bookRoot = new THREE.Group();
@@ -482,6 +504,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   return {
     rebuild: buildShelf,
+    applySettings,
     scrollToEnd() {
       panTarget = -panRange;
     },
