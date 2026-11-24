@@ -293,13 +293,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       t.colorSpace = THREE.SRGBColorSpace;
       t.anisotropy = maxAniso;
       t.needsUpdate = true;
-      texCache.get(k)?.dispose();
+      const generated = texCache.get(k);
       texCache.set(k, t);
-      if (entries.get(b.id) === e) {
-        m.map = t;
-        m.needsUpdate = true;
-        force = true;
-      }
+      if (entries.get(b.id) === e) startFade(e, t, generated);
+      else generated?.dispose();
     });
   }
 
@@ -335,6 +332,45 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     }
     e.hasSpine = false;
     e.hasCover = false;
+    force = true;
+  }
+
+  /** The real cover fades in over the generated one instead of popping in. */
+  interface Fade {
+    e: Entry;
+    plane: THREE.Mesh;
+    mat: THREE.MeshStandardMaterial;
+    tex: THREE.Texture;
+    generated: THREE.Texture | undefined;
+    t: number;
+  }
+  const fades = new Set<Fade>();
+  const FADE_S = 0.4;
+
+  function startFade(e: Entry, tex: THREE.Texture, generated: THREE.Texture | undefined): void {
+    const host = e.grp.children[0] as THREE.Mesh;
+    const mat = new THREE.MeshStandardMaterial({map: tex, roughness: 0.6, transparent: true, opacity: 0, depthWrite: false});
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(e.b.d, e.b.h), mat);
+    // Same orientation as the box's +x face, a hair in front of it.
+    plane.rotation.y = Math.PI / 2;
+    plane.position.x = e.b.w / 2 + 0.002;
+    host.add(plane);
+    fades.add({e, plane, mat, tex, generated, t: 0});
+    force = true;
+  }
+
+  function endFade(f: Fade): void {
+    fades.delete(f);
+    f.plane.parent?.remove(f.plane);
+    f.plane.geometry.dispose();
+    f.mat.dispose();
+    // The box face takes over the real texture; the generated one is no longer shown anywhere.
+    const m = f.e.mats[MAT.cover];
+    if (m && entries.get(f.e.b.id) === f.e) {
+      m.map = f.tex;
+      m.needsUpdate = true;
+    }
+    f.generated?.dispose();
     force = true;
   }
 
@@ -668,6 +704,13 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       moved++;
       for (let i = 0; i < e.mats.length; i++) e.mats[i]?.color.copy(e.base[i] as THREE.Color).multiply(e.tint);
     });
+    for (const f of fades) {
+      f.t += dt / FADE_S;
+      f.mat.opacity = Math.min(f.t, 1);
+      f.mat.color.copy(f.e.tint);
+      moved++;
+      if (f.t >= 1 || entries.get(f.e.b.id) !== f.e) endFade(f);
+    }
     // An idle shelf costs nothing: draw only while something is still easing or was just changed.
     if (!moved && !force) return;
     force = false;
