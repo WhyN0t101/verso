@@ -3,7 +3,7 @@ import {mapGenre} from '../shared/genres';
 /**
  * Cloudflare Worker: serves /api/search and /api/cover; everything else is static assets.
  *   GET /api/search?q=dune          candidate books (Open Library search.json)
- *   GET /api/search?work=OL893414W  summary + genre for one pick (Open Library works, then Google Books)
+ *   GET /api/search?work=OL893414W  summary + genre for one work (Open Library works, then Google Books)
  *   GET /api/cover?id=11481354      cover image from our own origin, numeric Open Library ids only
  * GOOGLE_BOOKS_API_KEY is a Worker secret. When unset, the Google Books fallback is skipped.
  */
@@ -23,6 +23,9 @@ const MAX_COVER_BYTES = 4 * 1024 * 1024;
 const COVER_SIZES = new Set(['S', 'M', 'L']);
 
 const CDN = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
+// A work with no summary anywhere is retried sooner, in case Google was only briefly unavailable.
+const CDN_SHORT = 'public, max-age=300, s-maxage=3600';
+const MAX_QUERY_STRING = 400;
 const COVER_CC = 'public, max-age=604800, s-maxage=2592000, immutable';
 
 /* ---------- text helpers ---------- */
@@ -65,17 +68,14 @@ async function getJson(url: string, timeoutMs = 8000): Promise<unknown> {
   return r.json();
 }
 
-/**
- * Workers Cache API in front of an upstream call. Only 200s are stored; the response's Cache-Control sets the TTL.
- * A `private` response is never stored: it depends on caller-supplied input.
- */
+/** Workers Cache API in front of an upstream call. Only 200s are stored; the response's Cache-Control sets the TTL. */
 async function withCache(keyUrl: string, ctx: Ctx, produce: () => Promise<Response>): Promise<Response> {
   const cache = (caches as unknown as {default: Cache}).default;
   const key = new Request(keyUrl, {method: 'GET'});
   const hit = await cache.match(key);
   if (hit) return hit;
   const res = await produce();
-  if (res.status === 200 && !res.headers.get('Cache-Control')?.includes('private')) ctx.waitUntil(cache.put(key, res.clone()));
+  if (res.status === 200) ctx.waitUntil(cache.put(key, res.clone()));
   return res;
 }
 
@@ -140,15 +140,34 @@ async function googleSummary(title: string, author: string, key: string): Promis
   return '';
 }
 
-async function workDetail(id: string, title: string, author: string, googleKey: string | undefined): Promise<WorkDetail> {
-  const work = (await getJson(`${OL}/works/${id}.json`)) as {description?: unknown; subjects?: string[]};
+/** First author's name from the Open Library work record, or '' when it cannot be resolved. */
+async function authorName(work: {authors?: {author?: {key?: string}}[]}): Promise<string> {
+  const key = work.authors?.[0]?.author?.key ?? '';
+  if (!/^\/authors\/OL\d+A$/.test(key)) return '';
+  try {
+    const a = (await getJson(`${OL}${key}.json`)) as {name?: unknown};
+    return typeof a.name === 'string' ? a.name.slice(0, 100) : '';
+  } catch (err) {
+    // Title alone still finds most books, so a failed author lookup is not fatal.
+    console.warn('author lookup failed', String(err));
+    return '';
+  }
+}
+
+/**
+ * Everything here derives from the work id alone: the Google query uses the title and author from
+ * Open Library's own record, never from the request, so the result is the same for every caller.
+ */
+async function workDetail(id: string, googleKey: string | undefined): Promise<WorkDetail> {
+  const work = (await getJson(`${OL}/works/${id}.json`)) as {title?: unknown; description?: unknown; subjects?: string[]; authors?: {author?: {key?: string}}[]};
   const genre = mapGenre(work.subjects ?? []);
   const summary = cleanDescription(work.description);
   if (summary) return {summary, genre, source: 'openlibrary'};
   // No key means no fallback, quietly: Open Library alone is a complete flow.
+  const title = typeof work.title === 'string' ? work.title.slice(0, 150) : '';
   if (!googleKey || !title) return {summary: '', genre, source: null};
   try {
-    const g = await googleSummary(title, author, googleKey);
+    const g = await googleSummary(title, await authorName(work), googleKey);
     return {summary: g, genre, source: g ? 'google' : null};
   } catch (err) {
     // Best effort: a Google outage or quota must not break adding a book.
@@ -163,14 +182,9 @@ async function handleSearch(url: URL, env: Env, ctx: Ctx): Promise<Response> {
   try {
     if (work) {
       if (!/^OL\d+W$/.test(work)) return json({error: 'bad work id'}, 400);
-      const title = (url.searchParams.get('title') ?? '').slice(0, 150);
-      const author = (url.searchParams.get('author') ?? '').slice(0, 100);
       return await withCache(`${url.origin}/api/search?work=${work}`, ctx, async () => {
-        const d = await workDetail(work, title, author, env.GOOGLE_BOOKS_API_KEY);
-        if (d.source === 'openlibrary') return json(d, 200, CDN);
-        // Google's answer depends on the caller's title/author, so it must not be shared under the work-only key
-        // (anyone could otherwise plant a wrong summary for a work). Browser-private cache only.
-        return json(d, 200, 'private, max-age=300');
+        const d = await workDetail(work, env.GOOGLE_BOOKS_API_KEY);
+        return json(d, 200, d.summary ? CDN : CDN_SHORT);
       });
     }
     if (q.length < 2 || q.length > 120) return json({error: 'q must be 2-120 characters'}, 400);
@@ -216,6 +230,7 @@ export default {
     const url = new URL(req.url);
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
     if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', {status: 405, headers: {Allow: 'GET, HEAD'}});
+    if (url.search.length > MAX_QUERY_STRING) return json({error: 'query string too long'}, 414);
     if (url.pathname === '/api/search') return handleSearch(url, env, ctx);
     if (url.pathname === '/api/cover') return handleCover(url, ctx);
     return json({error: 'not found'}, 404);

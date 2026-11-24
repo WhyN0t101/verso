@@ -34,46 +34,66 @@ async function call(path: string, env: Partial<Env> = {}) {
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), {status}));
 
 describe('/api/search work mode', () => {
-  it('falls back to Google Books, with the Worker secret, when Open Library has no description', async () => {
+  /** Open Library mock: a work with no description, plus its author record. */
+  const olNoDescription = (u: string) =>
+    u.includes('/works/') ? json({title: 'Real Title', subjects: ['Fantasy'], authors: [{author: {key: '/authors/OL1A'}}]}) : u.includes('/authors/') ? json({name: 'Real Author'}) : null;
+
+  it('takes title and author for Google from the Open Library record, and caches the result per work', async () => {
+    const urls: string[] = [];
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((u) => {
+      urls.push(String(u));
+      return olNoDescription(String(u)) ?? json({items: [{volumeInfo: {description: 'From Google.'}}]});
+    });
+    const env = {GOOGLE_BOOKS_API_KEY: 'test-key'};
+    const a = await call('/api/search?work=OL1111W&title=Wrong&author=Attacker', env);
+    expect(a.body).toEqual({summary: 'From Google.', genre: 'Fantasy', source: 'google'});
+    const google = urls.find((u) => u.includes('googleapis.com')) ?? '';
+    expect(google).toContain('intitle%3AReal%20Title');
+    expect(google).toContain('inauthor%3AReal%20Author');
+    expect(google).not.toMatch(/Wrong|Attacker/);
+    expect(google).toContain('key=test-key');
+    expect(a.headers.get('Cache-Control')).toContain('s-maxage=86400');
+    expect(cache.store.size).toBe(1);
+    // Same work with different (ignored) params is a cache hit: no further upstream calls.
+    const calls = spy.mock.calls.length;
+    const b = await call('/api/search?work=OL1111W&title=Other', env);
+    expect(b.body).toEqual(a.body);
+    expect(spy.mock.calls.length).toBe(calls);
+  });
+
+  it('still searches Google by title when the author lookup fails', async () => {
     const urls: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation((u) => {
       urls.push(String(u));
-      return String(u).includes('openlibrary.org') ? json({subjects: ['Fantasy']}) : json({items: [{volumeInfo: {description: 'From Google.'}}]});
+      if (String(u).includes('/authors/')) return json({}, 500);
+      return olNoDescription(String(u)) ?? json({items: [{volumeInfo: {description: 'Title only.'}}]});
     });
-    const r = await call('/api/search?work=OL1111W&title=Fallback%20Title&author=A.%20Person', {GOOGLE_BOOKS_API_KEY: 'test-key'});
-    expect(r.body).toEqual({summary: 'From Google.', genre: 'Fantasy', source: 'google'});
-    expect(urls.some((u) => u.includes('key=test-key'))).toBe(true);
-  });
-
-  it('does not let caller-supplied title/author poison the shared cache for a work', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation((u) =>
-      String(u).includes('openlibrary.org') ? json({subjects: []}) : json({items: [{volumeInfo: {description: 'Planted summary.'}}]}),
-    );
-    const a = await call('/api/search?work=OL4444W&title=Totally%20Wrong%20Book', {GOOGLE_BOOKS_API_KEY: 'k'});
-    expect(a.body).toMatchObject({source: 'google'});
-    expect(a.headers.get('Cache-Control')).toContain('private');
-    expect(cache.store.size).toBe(0);
+    const r = await call('/api/search?work=OL5555W', {GOOGLE_BOOKS_API_KEY: 'k'});
+    expect(r.body).toMatchObject({summary: 'Title only.', source: 'google'});
+    expect(urls.find((u) => u.includes('googleapis.com'))).not.toContain('inauthor');
   });
 
   it('skips Google Books quietly when no key is configured', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({subjects: ['Poetry']}));
-    const r = await call('/api/search?work=OL3333W&title=Needs%20Fallback');
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((u) => olNoDescription(String(u)) ?? json({}));
+    const r = await call('/api/search?work=OL3333W');
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({summary: '', genre: 'Poetry', source: null});
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(String(spy.mock.calls[0]?.[0])).toContain('openlibrary.org');
+    expect(r.body).toEqual({summary: '', genre: 'Fantasy', source: null});
+    expect(spy.mock.calls.every(([u]) => String(u).includes('openlibrary.org'))).toBe(true);
+    expect(r.headers.get('Cache-Control')).toContain('s-maxage=3600');
   });
 
   it('still answers when Google Books fails (quota)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation((u) => (String(u).includes('openlibrary.org') ? json({}) : json({error: 'quota'}, 429)));
-    const r = await call('/api/search?work=OL2222W&title=No%20Summary%20Anywhere', {GOOGLE_BOOKS_API_KEY: 'k'});
+    vi.spyOn(globalThis, 'fetch').mockImplementation((u) => olNoDescription(String(u)) ?? json({error: 'quota'}, 429));
+    const r = await call('/api/search?work=OL2222W', {GOOGLE_BOOKS_API_KEY: 'k'});
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({summary: '', genre: '', source: null});
+    expect(r.body).toEqual({summary: '', genre: 'Fantasy', source: null});
   });
 
   it('rejects malformed work ids and short queries', async () => {
     expect((await call('/api/search?work=../etc')).status).toBe(400);
     expect((await call('/api/search?q=x')).status).toBe(400);
+    expect((await call(`/api/search?q=${'a'.repeat(121)}`)).status).toBe(400);
+    expect((await call(`/api/search?work=OL1W&junk=${'a'.repeat(500)}`)).status).toBe(414);
   });
 
   it('serves repeat queries from the Cache API with CDN headers', async () => {

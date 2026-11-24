@@ -13,4 +13,4 @@ export async function searchBooks(q: string, signal: AbortSignal): Promise<Searc
 }
 
 export const fetchWork = (r: SearchResult, signal: AbortSignal): Promise<WorkDetail> =>
-  get<WorkDetail>({work: r.work, title: r.title, author: r.author}, signal);
+  get<WorkDetail>({work: r.work}, signal);
