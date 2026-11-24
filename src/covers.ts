@@ -2,25 +2,122 @@ import type {Tone} from './types';
 import {clamp} from './util';
 
 const MIN_SIDE = 60;
-const cache = new Map<string, Promise<HTMLImageElement | null>>();
+const INTERACTIVE_SLOTS = 4;
+const BACKGROUND_SLOTS = 1;
+
+const abortError = (): DOMException => new DOMException('aborted', 'AbortError');
+
+/** Runs tasks at most `max` at a time. A task still waiting for a slot is dropped when its signal aborts. */
+export function createLimiter(max: number): <T>(task: () => Promise<T>, signal?: AbortSignal) => Promise<T> {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  const next = (): void => {
+    while (active < max && waiting.length) waiting.shift()?.();
+  };
+  return (task, signal) =>
+    new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(abortError());
+      const start = (): void => {
+        signal?.removeEventListener('abort', onAbort);
+        active++;
+        task()
+          .then(resolve, reject)
+          .finally(() => {
+            active--;
+            next();
+          });
+      };
+      const onAbort = (): void => {
+        const at = waiting.indexOf(start);
+        if (at < 0) return;
+        waiting.splice(at, 1);
+        reject(abortError());
+      };
+      signal?.addEventListener('abort', onAbort, {once: true});
+      waiting.push(start);
+      next();
+    });
+}
+
+const interactive = createLimiter(INTERACTIVE_SLOTS);
+const background = createLimiter(BACKGROUND_SLOTS);
+
+type Outcome = {img: HTMLImageElement | null; final: boolean};
+
+/** Fetches (cancellably) and decodes a cover. `final` is false for transient failures, which must not be remembered. */
+async function fetchImage(url: string, signal: AbortSignal): Promise<Outcome> {
+  const r = await fetch(url, {signal});
+  if (!r.ok) return {img: null, final: r.status < 500};
+  const objectUrl = URL.createObjectURL(await r.blob());
+  try {
+    const img = await new Promise<HTMLImageElement | null>((resolve) => {
+      const el = new Image();
+      el.onload = () => resolve(el.naturalWidth >= MIN_SIDE && el.naturalHeight >= MIN_SIDE ? el : null);
+      el.onerror = () => resolve(null);
+      el.src = objectUrl;
+    });
+    return {img, final: true};
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+interface InFlight {
+  promise: Promise<HTMLImageElement | null>;
+  ctl: AbortController;
+  /** Callers still interested. Callers without a signal never leave. */
+  users: number;
+}
+const inflight = new Map<string, InFlight>();
+const settled = new Map<string, HTMLImageElement | null>();
+
+export interface LoadOptions {
+  /** Aborting drops this caller; the request itself stops once no caller is left. */
+  signal?: AbortSignal;
+  /** Low priority lane for work nobody is waiting on (tone extraction). */
+  background?: boolean;
+}
 
 /**
- * Loads a cover from our own /api/cover proxy (same origin, so canvases stay untainted).
- * Resolves null when the cover is missing or is a placeholder-sized image, so callers use the generated cover.
+ * Loads a cover from our own /api/cover proxy (same origin, so canvases stay untainted). Identical urls share
+ * one request. Resolves null when the cover is missing, unusable, cancelled or failed, so callers use the
+ * generated cover; only definitive answers are remembered, so a cancelled or failed load can be retried.
  */
-export function loadCover(url: string): Promise<HTMLImageElement | null> {
-  let p = cache.get(url);
-  if (!p) {
-    p = new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img.naturalWidth >= MIN_SIDE && img.naturalHeight >= MIN_SIDE ? img : null);
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
-    cache.set(url, p);
+export function loadCover(url: string, opts: LoadOptions = {}): Promise<HTMLImageElement | null> {
+  if (opts.signal?.aborted) return Promise.resolve(null);
+  if (settled.has(url)) return Promise.resolve(settled.get(url) ?? null);
+  let entry = inflight.get(url);
+  if (!entry) {
+    const ctl = new AbortController();
+    const lane = opts.background ? background : interactive;
+    const promise = lane(() => fetchImage(url, ctl.signal), ctl.signal)
+      .then((o) => {
+        if (o.final) settled.set(url, o.img);
+        return o.img;
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) console.warn('cover failed', url, err);
+        return null;
+      })
+      .finally(() => {
+        if (inflight.get(url)?.ctl === ctl) inflight.delete(url);
+      });
+    entry = {promise, ctl, users: 0};
+    inflight.set(url, entry);
   }
-  return p;
+  entry.users++;
+  const e = entry;
+  opts.signal?.addEventListener(
+    'abort',
+    () => {
+      if (--e.users <= 0) {
+        e.ctl.abort();
+        if (inflight.get(url) === e) inflight.delete(url);
+      }
+    },
+    {once: true},
+  );
+  return e.promise;
 }
 
 /** The proxy serves medium by default; the export card draws the cover large and asks for L. */

@@ -130,7 +130,7 @@ initForm((draft, editingId) => {
 // Books that have a cover but no stored tone (imports, old backups) get one in the background.
 let toneSave = 0;
 const tones = createToneQueue({
-  load: loadCover,
+  load: (url) => loadCover(url, {background: true}),
   analyse: dominantTone,
   concurrency: 1,
   onTone(b) {

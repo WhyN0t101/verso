@@ -42,6 +42,9 @@ interface Entry {
   tint: THREE.Color;
   hasSpine: boolean;
   hasCover: boolean;
+  /** Aborts the real cover's request when the book is put back before it arrived. */
+  coverCtl?: AbortController;
+  coverPending?: boolean;
   caseIndex: number;
   /** Result of the search and status filter, refreshed only when they change. */
   match: boolean;
@@ -77,6 +80,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let force = true;
   let filterKey = '';
   let shadowDirty = false;
+  let prevSel: Entry | undefined;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 120);
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -279,8 +283,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const k = `${b.id}:${b.v}:cover`;
     if (!b.cover || realCovers.has(k)) return;
     realCovers.add(k);
+    const ctl = (e.coverCtl = new AbortController());
+    e.coverPending = true;
     // The generated cover shows immediately; the real one replaces it when it arrives.
-    void loadCover(b.cover).then((img) => {
+    void loadCover(b.cover, {signal: ctl.signal}).then((img) => {
+      e.coverPending = false;
       if (!img || !texCache.has(k)) return;
       const t = new THREE.Texture(img);
       t.colorSpace = THREE.SRGBColorSpace;
@@ -329,6 +336,30 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     e.hasSpine = false;
     e.hasCover = false;
     force = true;
+  }
+
+  /** Put back before its cover arrived: stop the request, and start over the next time it is picked. */
+  function cancelCover(e: Entry): void {
+    if (!e.coverPending) return;
+    e.coverPending = false;
+    e.coverCtl?.abort();
+    e.hasCover = false;
+    realCovers.delete(`${e.b.id}:${e.b.v}:cover`);
+  }
+
+  /** Hovering a book for a moment fetches its cover ahead of the click; moving on cancels it. */
+  let hoverCtl: AbortController | null = null;
+  let hoverTimer = 0;
+  function prefetchCover(e: Entry | undefined): void {
+    clearTimeout(hoverTimer);
+    hoverCtl?.abort();
+    hoverCtl = null;
+    const url = e?.b.cover;
+    if (!url) return;
+    hoverTimer = window.setTimeout(() => {
+      hoverCtl = new AbortController();
+      void loadCover(url, {signal: hoverCtl.signal});
+    }, 150);
   }
 
   function buildShelf(): void {
@@ -482,6 +513,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     }
     if (state.sel || ev.pointerType === 'touch') return;
     const id = pick(ev);
+    if (id !== hover) prefetchCover(id ? entries.get(id) : undefined);
     hover = id;
     canvas.classList.toggle('pointer', !!id);
     const e = id ? entries.get(id) : undefined;
@@ -500,6 +532,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   });
   canvas.addEventListener('pointerleave', () => {
     hover = null;
+    prefetchCover(undefined);
     hooks.onHover(null, 0, 0);
     canvas.classList.remove('pointer');
   });
@@ -548,6 +581,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     camera.lookAt(panCur + pointer.sx * 0.15, camY, 0);
     camera.updateMatrixWorld();
     const sel = state.sel ? entries.get(state.sel) : undefined;
+    if (prevSel && prevSel !== sel) cancelCover(prevSel);
+    prevSel = sel;
     const st = sel ? selTarget(sel.b) : null;
     lazyTextures(sel);
     const near = nearestCase(panCur, pitch, wall.cases.length);
