@@ -211,3 +211,51 @@ describe('/api/cover caching', () => {
     expect(cache.store.size).toBe(0);
   });
 });
+
+describe('cover choices', () => {
+  const ed = (title: string, covers: number[], publish_date = '1999') => ({title, covers, publish_date});
+
+  it('puts exact title matches first and study guides and notes editions last', async () => {
+    const {rankCovers} = await import('../src/worker');
+    const ranked = rankCovers(
+      [
+        ed('The Stranger: SparkNotes study guide', [1]),
+        ed('The Stranger and other stories', [2]),
+        ed('The Stranger', [3]),
+        ed('L’Étranger', [4]),
+        ed('Cliffs Notes on The Stranger', [5]),
+      ],
+      'The Stranger',
+    );
+    expect(ranked.map((c) => c.id)).toEqual([3, 2, 4, 1, 5]);
+  });
+
+  it('does not demote a book whose real title contains a guide word', async () => {
+    const {rankCovers} = await import('../src/worker');
+    const ranked = rankCovers([ed('Notes from Underground: a reader’s guide', [1]), ed('Notes from Underground', [2])], 'Notes from Underground');
+    expect(ranked.map((c) => c.id)).toEqual([2, 1]);
+  });
+
+  it('keeps at most 8 unique, positive, numeric ids', async () => {
+    const {rankCovers} = await import('../src/worker');
+    const eds = [ed('Dune', [-1]), ed('Dune', [7]), ed('Dune', [7]), ed('Dune', [1.5]), ed('Dune', []), ...Array.from({length: 12}, (_, i) => ed('Dune', [100 + i]))];
+    const ids = rankCovers(eds, 'Dune').map((c) => c.id);
+    expect(ids).toHaveLength(8);
+    expect(new Set(ids).size).toBe(8);
+    expect(ids.every((n) => Number.isInteger(n) && n > 0)).toBe(true);
+  });
+
+  it('answers through the proxy path, caches, and rejects bad input', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((u) =>
+      String(u).includes('search.json') ? json({docs: [{key: '/works/OL9W'}]}) : json({entries: [ed('Dune', [11], '1965'), ed('Dune study guide', [12])]}),
+    );
+    const r = await call('/api/covers?title=Dune&author=Herbert');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({choices: [{id: 11, title: 'Dune', year: 1965, cover: '/api/cover?id=11'}, {id: 12, title: 'Dune study guide', year: 1999, cover: '/api/cover?id=12'}]});
+    expect(cache.store.size).toBe(1);
+    const calls = spy.mock.calls.length;
+    await call('/api/covers?title=dune&author=herbert');
+    expect(spy.mock.calls.length).toBe(calls);
+    expect((await call('/api/covers?title=x')).status).toBe(400);
+  });
+});

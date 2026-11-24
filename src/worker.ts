@@ -218,6 +218,78 @@ async function handleSearch(url: URL, env: Env, ctx: Ctx): Promise<Response> {
   }
 }
 
+/* ---------- /api/covers ---------- */
+
+export interface CoverChoice {
+  /** Numeric Open Library cover id; the app loads it through /api/cover. */
+  id: number;
+  title: string;
+  year: number | null;
+}
+
+interface OlEdition {
+  title?: string;
+  covers?: number[];
+  publish_date?: string;
+}
+
+const MAX_CHOICES = 8;
+// Editions that are about the book rather than the book.
+const GUIDE = /\b(study guides?|sparknotes|cliffs? ?notes|notes|summary|summaries|analysis|workbook|companion|teachers?|lesson|quiz|critical|essays?|commentary|reader'?s guide)\b/i;
+
+const normTitle = (t: string): string => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * Orders edition covers for one book: an exact title match first, titles that contain it next, and
+ * study guides and notes editions last. Only positive integer ids survive (the same rule /api/cover enforces).
+ */
+export function rankCovers(editions: OlEdition[], bookTitle: string): CoverChoice[] {
+  const want = normTitle(bookTitle);
+  const seen = new Set<number>();
+  const scored: {c: CoverChoice; score: number; order: number}[] = [];
+  editions.forEach((e, order) => {
+    const id = (e.covers ?? []).find((n) => Number.isInteger(n) && n > 0 && n < 1e12);
+    if (id === undefined || seen.has(id)) return;
+    seen.add(id);
+    const title = typeof e.title === 'string' ? e.title.slice(0, 150) : '';
+    const have = normTitle(title);
+    let score = 0;
+    if (have === want) score += 4;
+    else if (want && have.includes(want)) score += 2;
+    // "Notes from Underground" is the book itself: an exact match is never a guide.
+    if (have !== want && GUIDE.test(title)) score -= 5;
+    const year = Number(/\b(\d{4})\b/.exec(e.publish_date ?? '')?.[1]);
+    scored.push({c: {id, title, year: Number.isFinite(year) ? year : null}, score, order});
+  });
+  scored.sort((a, b) => b.score - a.score || a.order - b.order);
+  return scored.slice(0, MAX_CHOICES).map((x) => x.c);
+}
+
+async function coverChoices(title: string, author: string): Promise<CoverChoice[]> {
+  const q = `${OL}/search.json?title=${encodeURIComponent(title)}${author ? `&author=${encodeURIComponent(author)}` : ''}&limit=1&fields=key`;
+  const found = (await getJson(q)) as {docs?: {key?: string}[]};
+  const work = /^\/works\/(OL\d+W)$/.exec(found.docs?.[0]?.key ?? '')?.[1];
+  if (!work) return [];
+  const eds = (await getJson(`${OL}/works/${work}/editions.json?limit=50`)) as {entries?: OlEdition[]};
+  return rankCovers(eds.entries ?? [], title);
+}
+
+async function handleCovers(url: URL, ctx: Ctx): Promise<Response> {
+  const title = (url.searchParams.get('title') ?? '').trim();
+  const author = (url.searchParams.get('author') ?? '').trim();
+  if (title.length < 2 || title.length > 150 || author.length > 100) return json({error: 'title must be 2-150 characters'}, 400);
+  try {
+    const key = `${url.origin}/api/covers?title=${encodeURIComponent(title.toLowerCase())}&author=${encodeURIComponent(author.toLowerCase())}`;
+    return await withCache(key, ctx, async () => {
+      const choices = await coverChoices(title, author);
+      return json({choices: choices.map((c) => ({...c, cover: `/api/cover?id=${c.id}`}))}, 200, choices.length ? CDN : CDN_SHORT);
+    });
+  } catch (err) {
+    console.error('cover choices failed', String(err));
+    return json({error: 'upstream unavailable'}, 502);
+  }
+}
+
 /* ---------- /api/cover ---------- */
 
 /** Only numeric Open Library ids are accepted, so this is not an open proxy. */
@@ -256,6 +328,7 @@ export default {
     if (url.search.length > MAX_QUERY_STRING) return json({error: 'query string too long'}, 414);
     if (url.pathname === '/api/search') return handleSearch(url, env, ctx);
     if (url.pathname === '/api/cover') return handleCover(url, ctx);
+    if (url.pathname === '/api/covers') return handleCovers(url, ctx);
     return json({error: 'not found'}, 404);
   },
 };
