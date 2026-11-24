@@ -4,13 +4,15 @@ import {state, persist, findBook} from './state';
 import {makeBook, updateBook} from './data/books';
 import {matches} from './search';
 import type {Status} from './types';
-import {$, downloadBlob, toast} from './util';
+import {$, downloadBlob, toast, toastAction} from './util';
 import {createShelf, type Shelf} from './scene/shelf';
 import {initPanel, showPanel, hidePanel, fillPanel} from './ui/panel';
 import {initForm, openForm, closeForm, setGenreOptions} from './ui/form';
 import {initExport, openExport, closeExport} from './ui/exportDialog';
 import {renderList} from './ui/list';
 import {initDots, renderDots} from './ui/dots';
+import {enterSelect, exitSelect, initSelect, togglePick} from './ui/selectMode';
+import {removeBooks, restoreBooks} from './data/bulk';
 import {createToneQueue} from './toneQueue';
 import {dominantTone, loadCover} from './covers';
 import {initStyle, openStyle, closeStyle, applyBackground} from './ui/style';
@@ -42,6 +44,12 @@ function select(id: string): void {
   tip.style.opacity = '0';
 }
 
+/** A click or tap on a book: opens it, or in Select mode ticks it. */
+function activate(id: string): void {
+  if (state.selecting) togglePick(id);
+  else select(id);
+}
+
 function deselect(): void {
   state.sel = null;
   hidePanel();
@@ -55,7 +63,7 @@ function refresh(): void {
   $('empty').classList.toggle('hidden', n > 0 || listMode);
   setGenreOptions([...new Set(state.books.map((b) => b.genre))].sort());
   shelf?.rebuild();
-  if (listMode) renderList(select);
+  if (listMode) renderList(activate);
 }
 
 function setListMode(on: boolean): void {
@@ -72,9 +80,10 @@ function setListMode(on: boolean): void {
 shelf = createShelf($<HTMLCanvasElement>('gl'), {
   onPick(id) {
     if (id) {
-      if (id !== state.sel) select(id);
+      if (id !== state.sel || state.selecting) activate(id);
     } else if (state.sel) deselect();
   },
+  onLongPress: (id) => enterSelect(id),
   onView: renderDots,
   onHover(title, x, y) {
     if (title === null) {
@@ -95,13 +104,32 @@ initPanel({
   onChange() {
     persist();
     // A status edit can move the book in or out of the active filter.
-    if (listMode && state.status) renderList(select);
+    if (listMode && state.status) renderList(activate);
   },
   onDelete(b) {
     deselect();
     state.books = state.books.filter((x) => x.id !== b.id);
     persist();
     refresh();
+  },
+});
+
+initSelect({
+  onChange() {
+    if (state.selecting && state.sel) deselect();
+    if (listMode) renderList(activate);
+  },
+  onDelete(ids) {
+    const {books, removed} = removeBooks(state.books, new Set(ids));
+    if (!removed.length) return;
+    state.books = books;
+    persist();
+    refresh();
+    toastAction(`Deleted ${removed.length} ${removed.length === 1 ? 'book' : 'books'}.`, 'Undo', () => {
+      state.books = restoreBooks(state.books, removed);
+      persist();
+      refresh();
+    });
   },
 });
 
@@ -202,13 +230,16 @@ $<HTMLInputElement>('importFile').addEventListener('change', async (ev) => {
   }
 });
 
-$('add').addEventListener('click', () => openForm(null));
+$('add').addEventListener('click', () => {
+  if (state.selecting) exitSelect();
+  openForm(null);
+});
 $('viewToggle').addEventListener('click', () => setListMode(!listMode));
 
 $('q').addEventListener('input', (ev) => {
   state.q = (ev.target as HTMLInputElement).value.trim().toLowerCase();
   if (state.sel) deselect();
-  if (listMode) renderList(select);
+  if (listMode) renderList(activate);
   shelf?.revealMatch();
 });
 $<HTMLSelectElement>('statusFilter').addEventListener('change', (ev) => {
@@ -216,7 +247,7 @@ $<HTMLSelectElement>('statusFilter').addEventListener('change', (ev) => {
   state.status = sel.value as Status | '';
   sel.classList.toggle('active', !!state.status);
   if (state.sel) deselect();
-  if (listMode) renderList(select);
+  if (listMode) renderList(activate);
   shelf?.revealMatch();
 });
 $('q').addEventListener('keydown', (ev) => {
@@ -224,13 +255,14 @@ $('q').addEventListener('keydown', (ev) => {
   const first = state.books.find((b) => matches(b, state.q, state.status));
   if (!first) return;
   shelf?.focusBook(first.id);
-  select(first.id);
+  activate(first.id);
   (ev.target as HTMLElement).blur();
 });
 
 addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
-  if (!menu.classList.contains('hidden')) setMenu(false);
+  if (state.selecting) exitSelect();
+  else if (!menu.classList.contains('hidden')) setMenu(false);
   else if (!$('style').classList.contains('hidden')) closeStyle();
   else if (!$('modal').classList.contains('hidden')) closeForm();
   else if (!$('export').classList.contains('hidden')) closeExport();
@@ -238,7 +270,7 @@ addEventListener('keydown', (ev) => {
   else if (state.q) {
     $<HTMLInputElement>('q').value = '';
     state.q = '';
-    if (listMode) renderList(select);
+    if (listMode) renderList(activate);
   }
 });
 

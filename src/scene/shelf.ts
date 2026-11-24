@@ -13,6 +13,8 @@ export interface ShelfHooks {
   /** Book id picked by a click, or null for a click on empty space. */
   onPick(id: string | null): void;
   onHover(title: string | null, x: number, y: number): void;
+  /** A touch held on a book for about half a second. */
+  onLongPress(id: string): void;
   /** The bookcase the camera is heading for changed, or the wall itself did (labels are genre names when grouped). */
   onView(index: number, labels: (string | null)[]): void;
 }
@@ -46,6 +48,7 @@ interface Entry {
   coverCtl?: AbortController;
   coverPending?: boolean;
   caseIndex: number;
+  picked: boolean;
   /** Result of the search and status filter, refreshed only when they change. */
   match: boolean;
 }
@@ -458,7 +461,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           grp.scale.setScalar(pv.s);
         }
         bookRoot.add(grp);
-        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, match: true});
+        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, picked: false, match: true});
         pickables.push(mesh);
       }
     }));
@@ -526,9 +529,20 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const hit = ray.intersectObjects(pickables, false)[0];
     return hit ? (hit.object.userData.id as string) : null;
   }
-  let down: {x: number; y: number; lx: number; lt: number; vx: number; moved: number} | null = null;
+  let down: {x: number; y: number; lx: number; lt: number; vx: number; moved: number; long: boolean} | null = null;
+  let pressTimer = 0;
   canvas.addEventListener('pointerdown', (ev) => {
-    down = {x: ev.clientX, y: ev.clientY, lx: ev.clientX, lt: ev.timeStamp, vx: 0, moved: 0};
+    down = {x: ev.clientX, y: ev.clientY, lx: ev.clientX, lt: ev.timeStamp, vx: 0, moved: 0, long: false};
+    clearTimeout(pressTimer);
+    if (ev.pointerType !== 'mouse') {
+      pressTimer = window.setTimeout(() => {
+        if (!down || down.moved >= 6) return;
+        const id = pick(ev);
+        if (!id) return;
+        down.long = true;
+        hooks.onLongPress(id);
+      }, 500);
+    }
     canvas.setPointerCapture(ev.pointerId);
   });
   canvas.addEventListener('pointermove', (ev) => {
@@ -557,13 +571,17 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   });
   canvas.addEventListener('pointerup', (ev) => {
     if (!down) return;
-    const {moved, vx} = down;
+    clearTimeout(pressTimer);
+    const {moved, vx, long} = down;
     down = null;
+    if (long) return;
     if (moved < 6) hooks.onPick(pick(ev));
     // Touch swipes settle on a bookcase; a mouse drag stays where it was let go.
     else if (ev.pointerType !== 'mouse' && panMax > 0) panTarget = caseX(snapCase(panTarget, vx, pitch, wall.cases.length), pitch);
   });
+  canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
   canvas.addEventListener('pointercancel', () => {
+    clearTimeout(pressTimer);
     down = null;
   });
   canvas.addEventListener('pointerleave', () => {
@@ -646,6 +664,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     entries.forEach((e) => {
       const isSel = sel === e;
       const match = e.match;
+      const picked = state.picked.has(e.b.id);
+      if (picked !== e.picked) {
+        e.picked = picked;
+        // A warm glow on every face marks the books chosen in Select mode.
+        for (const m of e.mats) {
+          m.emissive.setHex(picked ? 0xe2b36b : 0x000000);
+          m.emissiveIntensity = picked ? 0.45 : 0;
+        }
+        moved++;
+      }
       const p = e.grp.position;
       let tx = e.home.x;
       let ty = e.home.y;
@@ -671,7 +699,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         if (!sel && hover === e.b.id) {
           ty += 0.1;
           tz += 0.18;
-        } else if (!sel && filtering && match) {
+        } else if (!sel && ((filtering && match) || e.picked)) {
           ty += 0.08;
           tz += 0.22;
         }

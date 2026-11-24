@@ -45,9 +45,28 @@ export function downloadBlob(blob: Blob, filename: string): void {
 }
 
 let toastTimer = 0;
+/** A toast with one action button, such as Undo. It stays clickable until it fades. */
+export function toastAction(msg: string, label: string, onClick: () => void, ms = 8000): void {
+  const el = $('toast');
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-btn';
+  btn.textContent = label;
+  btn.addEventListener('click', () => {
+    el.classList.remove('show', 'action');
+    clearTimeout(toastTimer);
+    onClick();
+  });
+  el.replaceChildren(document.createTextNode(msg + ' '), btn);
+  el.classList.add('show', 'action');
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => el.classList.remove('show', 'action'), ms);
+}
+
 export function toast(msg: string): void {
   const el = $('toast');
   el.textContent = msg;
+  el.classList.remove('action');
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => el.classList.remove('show'), 3200);

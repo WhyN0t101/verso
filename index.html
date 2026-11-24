@@ -19,12 +19,14 @@
     <option value="reading">Reading</option>
     <option value="finished">Finished</option>
   </select>
+  <button class="btn" id="selectBtn">Select</button>
   <button class="btn primary" id="add">Add book</button>
   <button class="btn icon" id="menuBtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false">&#8943;</button>
 </header>
 
 <nav id="menu" class="hidden" aria-label="Menu">
   <button id="viewToggle">List view</button>
+  <button id="selectMenu">Select books</button>
   <button id="groupToggle">Group by genre: off</button>
   <button id="openStyle">Style the shelf</button>
   <button id="exportBackup">Export backup (JSON)</button>
@@ -34,6 +36,20 @@
 
 <div id="listView" class="hidden" role="list"></div>
 
+<div id="selbar" class="hidden" role="toolbar" aria-label="Select books">
+  <span id="selCount" aria-live="polite">0 selected</span>
+  <span class="selbtns" id="selActions">
+    <button class="btn" id="selAll">Select all matching</button>
+    <button class="btn" id="selClear">Clear</button>
+    <button class="btn" id="selCancel">Cancel</button>
+    <button class="btn danger" id="selDelete">Delete</button>
+  </span>
+  <span class="selbtns hidden" id="selConfirm">
+    <span id="selConfirmText"></span>
+    <button class="btn danger" id="selConfirmYes">Delete</button>
+    <button class="btn" id="selConfirmNo">Keep</button>
+  </span>
+</div>
 <div id="dots" class="hidden" aria-label="Bookcases"></div>
 <div id="hint">Click a book to pull it out. Drag or scroll to move along the shelf.</div>
 <div id="empty" class="hidden">Your shelf is empty. Add your first book to start.</div>

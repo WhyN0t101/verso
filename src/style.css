@@ -36,6 +36,18 @@ canvas#gl.pointer{cursor:pointer}
 .dot::after{content:"";width:8px;height:8px;border-radius:50%;background:rgba(246,234,212,.35);transition:background .2s,transform .2s}
 .dot:hover::after{background:rgba(246,234,212,.7)}
 .dot.on::after{background:var(--acc);transform:scale(1.35)}
+#selbar{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:9;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:center;width:max-content;max-width:96vw;background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--acc);border-radius:14px;padding:10px 14px}
+#selCount{font:600 14px Inter,sans-serif;color:var(--acc)}
+.selbtns{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center}
+#selConfirmText{font-size:14px}
+.btn:disabled{opacity:.4;cursor:default}
+body.selecting #hint{display:none}
+body.selecting #dots{bottom:84px}
+body.selecting canvas#gl{cursor:pointer}
+#toast.action{pointer-events:auto}
+.toast-btn{margin-left:8px;background:none;border:0;color:var(--acc);font:600 14px Inter,sans-serif;cursor:pointer;text-decoration:underline}
+.list-row.picked{border-color:var(--acc);background:rgba(226,179,107,.2)}
+@media (max-width:760px){#selectBtn{display:none}}
 #tip{position:fixed;z-index:6;pointer-events:none;background:rgba(15,10,7,.92);border:1px solid var(--line);padding:6px 10px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .12s;white-space:nowrap}
 #panel{position:fixed;z-index:7;top:var(--bar-h);right:0;height:calc(100% - var(--bar-h));width:min(400px,92vw);background:var(--panel);backdrop-filter:blur(10px);border-left:1px solid var(--line);padding:56px 24px 24px;overflow-y:auto;transform:translateX(105%);transition:transform .45s cubic-bezier(.2,.8,.2,1)}
 #panel.open{transform:none}

@@ -10,6 +10,9 @@ export const state = {
   settings: stored.settings as Settings,
   sel: null as string | null,
   q: '',
+  /** Select mode for bulk removal, and the ids picked in it. */
+  selecting: false,
+  picked: new Set<string>(),
   status: '' as Status | '',
   fmt: 'post' as 'post' | 'story' | 'square',
   theme: 'classic' as ThemeId,

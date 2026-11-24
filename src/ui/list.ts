@@ -19,7 +19,7 @@ export function renderList(onOpen: (id: string) => void): void {
 
 function row(b: Book, onOpen: (id: string) => void): HTMLElement {
   const li = document.createElement('button');
-  li.className = 'list-row';
+  li.className = 'list-row' + (state.picked.has(b.id) ? ' picked' : '');
   li.type = 'button';
   const title = document.createElement('span');
   title.className = 'list-title';
