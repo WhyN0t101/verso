@@ -433,9 +433,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const sel = state.sel ? entries.get(state.sel) : undefined;
     const st = sel ? selTarget(sel.b) : null;
     lazyTextures(camY, sel);
+    const filtering = !!(state.q || state.status);
     entries.forEach((e) => {
       const isSel = sel === e;
-      const match = matches(e.b, state.q);
+      const match = matches(e.b, state.q, state.status);
       const p = e.grp.position;
       let tx = e.home.x;
       let ty = e.home.y;
@@ -461,7 +462,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         if (!sel && hover === e.b.id) {
           ty += 0.1;
           tz += 0.18;
-        } else if (!sel && state.q && match) {
+        } else if (!sel && filtering && match) {
           ty += 0.08;
           tz += 0.22;
         }
@@ -478,7 +479,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       e.grp.scale.setScalar(s + (sc - s) * ease(dt, 6));
       let tint = 0xffffff;
       if (sel && !isSel) tint = 0x5e564d;
-      else if (state.q && !match) tint = 0x4d4740;
+      else if (filtering && !match) tint = 0x4d4740;
       tmpC.setHex(tint);
       e.tint.lerp(tmpC, ease(dt, 8));
       for (let i = 0; i < e.mats.length; i++) e.mats[i]?.color.copy(e.base[i] as THREE.Color).multiply(e.tint);

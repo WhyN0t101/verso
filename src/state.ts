@@ -1,4 +1,4 @@
-import type {Book, Settings} from './types';
+import type {Book, Settings, Status} from './types';
 import {load, save} from './data/storage';
 import {toast} from './util';
 import type {ThemeId} from './export/themes';
@@ -10,6 +10,7 @@ export const state = {
   settings: stored.settings as Settings,
   sel: null as string | null,
   q: '',
+  status: '' as Status | '',
   fmt: 'post' as 'post' | 'story' | 'square',
   theme: 'classic' as ThemeId,
   editing: null as string | null,

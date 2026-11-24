@@ -54,3 +54,22 @@ describe('mergeBooks', () => {
     expect(r.books).toHaveLength(2);
   });
 });
+
+describe('reading status', () => {
+  it('is absent on books saved before the field existed', () => {
+    expect(sanitizeBook({title: 'Old', rating: 3})).not.toHaveProperty('status');
+  });
+  it('keeps a valid status and drops anything else', () => {
+    expect(sanitizeBook({title: 'A', status: 'reading'})?.status).toBe('reading');
+    expect(sanitizeBook({title: 'B', status: 'abandoned'})).not.toHaveProperty('status');
+    expect(sanitizeBook({title: 'C', status: 5})).not.toHaveProperty('status');
+    expect(sanitizeBook({title: 'D', status: 'toString'})).not.toHaveProperty('status');
+  });
+  it('survives a backup round trip, and an old backup still imports', () => {
+    const b = book('S');
+    b.status = 'finished';
+    expect(parseBackup(buildBackup([b], DEFAULT_SETTINGS)).books[0]?.status).toBe('finished');
+    const old = JSON.stringify({app: 'verso', version: 1, books: [{title: 'Legacy', author: 'X', rating: 2}]});
+    expect(parseBackup(old).books[0]).toMatchObject({title: 'Legacy', rating: 2});
+  });
+});

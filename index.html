@@ -13,6 +13,12 @@
 <header id="bar">
   <div class="brand">Verso<small id="count"></small></div>
   <input id="q" type="search" placeholder="Search title, author or genre" autocomplete="off" aria-label="Search books">
+  <select id="statusFilter" aria-label="Filter by reading status">
+    <option value="">All</option>
+    <option value="wishlist">Wishlist</option>
+    <option value="reading">Reading</option>
+    <option value="finished">Finished</option>
+  </select>
   <button class="btn primary" id="add">Add book</button>
   <button class="btn icon" id="menuBtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false">&#8943;</button>
 </header>
@@ -38,6 +44,7 @@
   <h2 id="pTitle"></h2>
   <div id="pAuthor"></div>
   <div id="pStars" aria-label="Rating"></div>
+  <div class="chips" id="pStatus" role="group" aria-label="Reading status"></div>
   <h3>Summary</h3>
   <p id="pSummary"></p>
   <h3>Your notes and opinion</h3>

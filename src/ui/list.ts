@@ -7,7 +7,7 @@ import {$} from '../util';
 export function renderList(onOpen: (id: string) => void): void {
   const ul = $('listView');
   ul.replaceChildren();
-  const shown = state.books.filter((b) => matches(b, state.q));
+  const shown = state.books.filter((b) => matches(b, state.q, state.status));
   for (const b of shown) ul.appendChild(row(b, onOpen));
   if (!shown.length) {
     const p = document.createElement('p');

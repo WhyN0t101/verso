@@ -10,6 +10,16 @@ canvas#gl.pointer{cursor:pointer}
 .brand{font-family:"Playfair Display",Georgia,serif;font-weight:700;font-size:22px;white-space:nowrap}
 .brand small{font:500 12px Inter,sans-serif;color:var(--mute);margin-left:8px}
 #q{flex:1;min-width:0;max-width:420px;margin-left:auto;background:rgba(255,255,255,.08);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:10px 16px;font:400 15px Inter,sans-serif;outline:none}
+#statusFilter{background:rgba(255,255,255,.08);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:10px 12px;font:500 14px Inter,sans-serif;outline:none;cursor:pointer}
+#statusFilter option{background:#1f150e;color:var(--ink)}
+#statusFilter:focus,#statusFilter.active{border-color:var(--acc)}
+.chips{display:flex;gap:6px;margin:6px 0 2px}
+.chip{background:transparent;color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font:600 11px Inter,sans-serif;letter-spacing:.06em;cursor:pointer}
+.chip:hover{border-color:var(--mute)}
+.chip.on{color:#2a1b0c;border-color:transparent}
+.chip.on.wishlist{background:#9fb8d6}
+.chip.on.reading{background:var(--acc)}
+.chip.on.finished{background:#9cc79a}
 #q::placeholder{color:var(--mute)}
 #q:focus{border-color:var(--acc)}
 .btn{background:rgba(255,255,255,.08);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font:500 14px Inter,sans-serif;cursor:pointer;white-space:nowrap}
@@ -83,3 +93,9 @@ label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;col
 .opt.on{border-color:var(--acc);background:rgba(226,179,107,.16)}
 .swatch{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.25);flex:none}
 #fRetry{margin-top:8px}
+@media (max-width:480px){
+  /* The brand gives way so search keeps a usable width next to the status filter. */
+  .brand{display:none}
+  #q{margin-left:0;padding:10px 12px}
+  #statusFilter{padding:10px 8px}
+}

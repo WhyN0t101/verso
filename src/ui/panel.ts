@@ -1,5 +1,7 @@
 import type {Book} from '../types';
 import {$} from '../util';
+import {STATUS_LABELS} from '../data/books';
+import type {Status} from '../types';
 
 export interface PanelHooks {
   onClose(): void;
@@ -30,6 +32,26 @@ function renderStars(b: Book): void {
       renderStars(b);
     });
     box.appendChild(s);
+  }
+}
+
+/** Chips double as the badge: the active one is lit, a second click clears it. */
+function renderStatus(b: Book): void {
+  const box = $('pStatus');
+  box.replaceChildren();
+  for (const id of Object.keys(STATUS_LABELS) as Status[]) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip' + (b.status === id ? ' on ' + id : '');
+    chip.textContent = STATUS_LABELS[id];
+    chip.setAttribute('aria-pressed', String(b.status === id));
+    chip.addEventListener('click', () => {
+      if (b.status === id) delete b.status;
+      else b.status = id;
+      hooks.onChange();
+      renderStatus(b);
+    });
+    box.appendChild(chip);
   }
 }
 
@@ -72,6 +94,7 @@ export function fillPanel(b: Book): void {
   $('pSummary').textContent = b.summary || 'No summary yet. Use Edit details to add one.';
   $<HTMLTextAreaElement>('pNotes').value = b.notes;
   renderStars(b);
+  renderStatus(b);
 }
 
 export function showPanel(b: Book): void {

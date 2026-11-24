@@ -1,7 +1,10 @@
-import type {Book, BookDraft, Tone} from '../types';
+import type {Book, BookDraft, Status, Tone} from '../types';
 import {clamp, hash, rng} from '../util';
 
 export const UNSORTED = 'Unsorted';
+
+export const STATUS_LABELS: Record<Status, string> = {wishlist: 'Wishlist', reading: 'Reading', finished: 'Finished'};
+export const isStatus = (v: unknown): v is Status => typeof v === 'string' && Object.hasOwn(STATUS_LABELS, v);
 
 export function makeBook(d: BookDraft): Book {
   const title = d.title.trim();
@@ -82,6 +85,7 @@ export function sanitizeBook(x: unknown): Book | null {
     d: num(o.d, 1.1, 0.8, 1.6),
     v: 1,
   };
+  if (isStatus(o.status)) book.status = o.status;
   if (typeof o.year === 'number' && Number.isFinite(o.year)) book.year = Math.round(o.year);
   // Only same-origin proxy paths are accepted so an imported file cannot point the canvas at foreign images.
   if (typeof o.cover === 'string' && o.cover.startsWith('/api/cover?')) book.cover = o.cover;

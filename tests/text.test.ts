@@ -1,5 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {cleanDescription, truncate} from '../src/worker';
+import {matches} from '../src/search';
+import type {Book} from '../src/types';
 
 describe('cleanDescription', () => {
   it('accepts the {value} object form', () => {
@@ -25,5 +27,17 @@ describe('truncate', () => {
     const out = truncate('word '.repeat(200), 50);
     expect(out.endsWith('…')).toBe(true);
     expect(out.length).toBeLessThanOrEqual(51);
+  });
+});
+
+describe('matches with status', () => {
+  const b = {title: 'Dune', author: 'Herbert', genre: 'Sci-fi', status: 'reading'} as Book;
+  it('filters by status, combined with the text query', () => {
+    expect(matches(b, '', 'reading')).toBe(true);
+    expect(matches(b, '', 'finished')).toBe(false);
+    expect(matches(b, 'dune', 'reading')).toBe(true);
+    expect(matches(b, 'dune', 'wishlist')).toBe(false);
+    expect(matches({...b, status: undefined}, '', 'reading')).toBe(false);
+    expect(matches({...b, status: undefined}, '', '')).toBe(true);
   });
 });

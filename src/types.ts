@@ -1,3 +1,5 @@
+export type Status = 'wishlist' | 'reading' | 'finished';
+
 /** Dominant cover colour, HSL with s/l in 0..100. */
 export interface Tone {h: number; s: number; l: number}
 
@@ -9,6 +11,8 @@ export interface Book {
   summary: string;
   notes: string;
   rating: number;
+  /** Absent on books saved before reading status existed. */
+  status?: Status;
   year?: number;
   /** Same-origin proxy path, e.g. /api/cover?id=123 */
   cover?: string;

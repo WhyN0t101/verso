@@ -3,6 +3,7 @@ import {fontsReady} from './fonts';
 import {state, persist, findBook} from './state';
 import {makeBook, updateBook} from './data/books';
 import {matches} from './search';
+import type {Status} from './types';
 import {$, downloadBlob, toast} from './util';
 import {createShelf, type Shelf} from './scene/shelf';
 import {initPanel, showPanel, hidePanel, fillPanel} from './ui/panel';
@@ -76,7 +77,11 @@ initPanel({
   onClose: deselect,
   onEdit: (b) => openForm(b),
   onExport: (b) => openExport(b),
-  onChange: persist,
+  onChange() {
+    persist();
+    // A status edit can move the book in or out of the active filter.
+    if (listMode && state.status) renderList(select);
+  },
   onDelete(b) {
     deselect();
     state.books = state.books.filter((x) => x.id !== b.id);
@@ -161,9 +166,16 @@ $('q').addEventListener('input', (ev) => {
   if (state.sel) deselect();
   if (listMode) renderList(select);
 });
+$<HTMLSelectElement>('statusFilter').addEventListener('change', (ev) => {
+  const sel = ev.target as HTMLSelectElement;
+  state.status = sel.value as Status | '';
+  sel.classList.toggle('active', !!state.status);
+  if (state.sel) deselect();
+  if (listMode) renderList(select);
+});
 $('q').addEventListener('keydown', (ev) => {
-  if (ev.key !== 'Enter' || !state.q) return;
-  const first = state.books.find((b) => matches(b, state.q));
+  if (ev.key !== 'Enter' || !(state.q || state.status)) return;
+  const first = state.books.find((b) => matches(b, state.q, state.status));
   if (!first) return;
   select(first.id);
   (ev.target as HTMLElement).blur();
