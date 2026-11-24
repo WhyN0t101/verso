@@ -26,7 +26,12 @@ const CDN = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800
 // A work with no summary anywhere is retried sooner, in case Google was only briefly unavailable.
 const CDN_SHORT = 'public, max-age=300, s-maxage=3600';
 const MAX_QUERY_STRING = 400;
-const COVER_CC = 'public, max-age=604800, s-maxage=2592000, immutable';
+// A cover id never changes its image, so a successful response is cacheable for good.
+const COVER_CC = 'public, max-age=31536000, immutable';
+// A missing cover may appear later; keep the miss short so the edge is not asked again on every view.
+const COVER_MISS_CC = 'public, max-age=300, s-maxage=3600';
+/** Medium is enough for the shelf; the export card asks for L. */
+const DEFAULT_COVER_SIZE = 'M';
 
 /* ---------- text helpers ---------- */
 
@@ -217,16 +222,19 @@ async function handleSearch(url: URL, env: Env, ctx: Ctx): Promise<Response> {
 
 /** Only numeric Open Library ids are accepted, so this is not an open proxy. */
 async function handleCover(url: URL, ctx: Ctx): Promise<Response> {
-  const id = url.searchParams.get('id') ?? '';
+  const rawId = url.searchParams.get('id') ?? '';
   const sizeParam = (url.searchParams.get('size') ?? '').toUpperCase();
-  const size = COVER_SIZES.has(sizeParam) ? sizeParam : 'L';
-  if (!/^\d{1,12}$/.test(id)) return json({error: 'bad cover id'}, 400);
+  const size = COVER_SIZES.has(sizeParam) ? sizeParam : DEFAULT_COVER_SIZE;
+  if (!/^\d{1,12}$/.test(rawId)) return json({error: 'bad cover id'}, 400);
+  // Leading zeros would otherwise give every spelling of an id its own cache entry.
+  const id = rawId.replace(/^0+(?=\d)/, '');
   try {
     return await withCache(`${url.origin}/api/cover?id=${id}&size=${size}`, ctx, async () => {
       // default=false makes Open Library answer 404 instead of a blank placeholder, so callers can fall back.
       const r = await fetchUpstream(`https://covers.openlibrary.org/b/id/${id}-${size}.jpg?default=false`, {});
       const type = r.headers.get('content-type') ?? '';
-      if (r.status === 404 || !type.startsWith('image/')) return json({error: 'no cover'}, 404, 'public, s-maxage=3600');
+      if (r.status >= 500) throw new Error(`upstream ${r.status}`);
+      if (r.status === 404 || !type.startsWith('image/')) return json({error: 'no cover'}, 404, COVER_MISS_CC);
       if (!r.ok) throw new Error(`upstream ${r.status}`);
       const buf = await r.arrayBuffer();
       if (buf.byteLength > MAX_COVER_BYTES) return json({error: 'cover too large'}, 502);

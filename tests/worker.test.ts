@@ -121,9 +121,9 @@ describe('/api/cover', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('streams the image with long cache headers and passes 404 through', async () => {
+  it('streams the image (medium by default) with long cache headers and passes 404 through', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((u) =>
-      Promise.resolve(String(u).includes('-L.jpg?default=false') && String(u).includes('/42-') ? new Response(new Uint8Array([1, 2, 3]), {headers: {'Content-Type': 'image/jpeg'}}) : new Response('no', {status: 404})),
+      Promise.resolve(String(u).includes('-M.jpg?default=false') && String(u).includes('/42-') ? new Response(new Uint8Array([1, 2, 3]), {headers: {'Content-Type': 'image/jpeg'}}) : new Response('no', {status: 404})),
     );
     const ok = await call('/api/cover?id=42');
     expect(ok.status).toBe(200);
@@ -167,5 +167,47 @@ describe('upstream retry', () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({}, 404));
     expect((await call('/api/cover?id=999')).status).toBe(404);
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('/api/cover caching', () => {
+  const jpeg = () => Promise.resolve(new Response(new Uint8Array([1, 2, 3]), {status: 200, headers: {'Content-Type': 'image/jpeg'}}));
+
+  it('marks a successful cover immutable for a year and stores it in the Cache API', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(jpeg);
+    const r = await call('/api/cover?id=123');
+    expect(r.status).toBe(200);
+    expect(r.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    expect(cache.store.size).toBe(1);
+  });
+
+  it('shares one cache entry between spellings of the same id', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(jpeg);
+    await call('/api/cover?id=00123&size=m');
+    await call('/api/cover?id=123');
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(String(spy.mock.calls[0]![0])).toContain('/b/id/123-M.jpg');
+  });
+
+  it('defaults to the medium size and only allows S, M or L', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(jpeg);
+    await call('/api/cover?id=5');
+    await call('/api/cover?id=6&size=L');
+    await call('/api/cover?id=7&size=XL');
+    expect(spy.mock.calls.map(([u]) => String(u).match(/-([SML])\.jpg/)?.[1])).toEqual(['M', 'L', 'M']);
+  });
+
+  it('never gives errors the long immutable header and does not store them', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({}, 404));
+    const miss = await call('/api/cover?id=9');
+    expect(miss.status).toBe(404);
+    expect(miss.headers.get('Cache-Control')).not.toMatch(/immutable|31536000/);
+    expect(miss.headers.get('Cache-Control')).toContain('max-age=300');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response('x', {status: 503})));
+    const down = await call('/api/cover?id=10');
+    expect(down.status).toBe(502);
+    expect(down.headers.get('Cache-Control')).toBe('no-store');
+    expect((await call('/api/cover?id=abc')).headers.get('Cache-Control')).toBe('no-store');
+    expect(cache.store.size).toBe(0);
   });
 });
