@@ -265,13 +265,38 @@ export function rankCovers(editions: OlEdition[], bookTitle: string): CoverChoic
   return scored.slice(0, MAX_CHOICES).map((x) => x.c);
 }
 
+interface OlWorkDoc {
+  key?: string;
+  title?: string;
+  author_name?: string[];
+  cover_i?: number;
+  edition_count?: number;
+}
+
+/**
+ * The most-published works by the author carry the real editions. A search on the bare title can hit a
+ * study guide or a translation under another title, so the search is free text and authors filter it.
+ */
+export function pickWorks(docs: OlWorkDoc[], author: string): string[] {
+  const last = normTitle(author).split(' ').pop() ?? '';
+  const withKey = docs.filter((d) => /^\/works\/OL\d+W$/.test(d.key ?? ''));
+  const byAuthor = last ? withKey.filter((d) => (d.author_name ?? []).some((n) => normTitle(n).includes(last))) : withKey;
+  return (byAuthor.length ? byAuthor : withKey)
+    .sort((a, b) => (b.edition_count ?? 0) - (a.edition_count ?? 0))
+    .slice(0, 2)
+    .map((d) => (d.key ?? '').slice(7));
+}
+
 async function coverChoices(title: string, author: string): Promise<CoverChoice[]> {
-  const q = `${OL}/search.json?title=${encodeURIComponent(title)}${author ? `&author=${encodeURIComponent(author)}` : ''}&limit=1&fields=key`;
-  const found = (await getJson(q)) as {docs?: {key?: string}[]};
-  const work = /^\/works\/(OL\d+W)$/.exec(found.docs?.[0]?.key ?? '')?.[1];
-  if (!work) return [];
-  const eds = (await getJson(`${OL}/works/${work}/editions.json?limit=50`)) as {entries?: OlEdition[]};
-  return rankCovers(eds.entries ?? [], title);
+  const fields = 'key,title,author_name,cover_i,edition_count';
+  const found = (await getJson(`${OL}/search.json?q=${encodeURIComponent(`${title} ${author}`.trim())}&limit=8&fields=${fields}`)) as {docs?: OlWorkDoc[]};
+  const docs = found.docs ?? [];
+  const works = pickWorks(docs, author);
+  const lists = await Promise.allSettled(works.map((w) => getJson(`${OL}/works/${w}/editions.json?limit=100`)));
+  const editions: OlEdition[] = [];
+  for (const l of lists) if (l.status === 'fulfilled') editions.push(...(((l.value as {entries?: OlEdition[]}).entries) ?? []));
+  if (!editions.length && lists.every((l) => l.status === 'rejected') && works.length) throw new Error('editions unavailable');
+  return rankCovers(editions, title);
 }
 
 async function handleCovers(url: URL, ctx: Ctx): Promise<Response> {

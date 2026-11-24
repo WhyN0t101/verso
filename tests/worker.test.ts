@@ -245,9 +245,24 @@ describe('cover choices', () => {
     expect(ids.every((n) => Number.isInteger(n) && n > 0)).toBe(true);
   });
 
+  it('picks the works by the author with the most editions, not the best title hit', async () => {
+    const {pickWorks} = await import('../src/worker');
+    const docs = [
+      {key: '/works/OL1W', title: 'The Stranger, Coles Notes', author_name: ['Albert Camus'], edition_count: 1},
+      {key: '/works/OL2W', title: 'L’étranger', author_name: ['Albert Camus'], edition_count: 471},
+      {key: '/works/OL3W', title: 'Looking for The Stranger', author_name: ['Alice Kaplan'], edition_count: 900},
+      {key: 'not-a-work', author_name: ['Albert Camus'], edition_count: 5000},
+    ];
+    expect(pickWorks(docs, 'Albert Camus')).toEqual(['OL2W', 'OL1W']);
+    expect(pickWorks(docs, '')[0]).toBe('OL3W');
+    expect(pickWorks(docs, 'Nobody Known')).toEqual(['OL3W', 'OL2W']);
+  });
+
   it('answers through the proxy path, caches, and rejects bad input', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((u) =>
-      String(u).includes('search.json') ? json({docs: [{key: '/works/OL9W'}]}) : json({entries: [ed('Dune', [11], '1965'), ed('Dune study guide', [12])]}),
+      String(u).includes('search.json')
+        ? json({docs: [{key: '/works/OL8W', title: 'Dune notes', author_name: ['Someone Else'], edition_count: 900}, {key: '/works/OL9W', title: 'Dune', author_name: ['Frank Herbert'], edition_count: 40}]})
+        : json({entries: [ed('Dune', [11], '1965'), ed('Dune study guide', [12])]}),
     );
     const r = await call('/api/covers?title=Dune&author=Herbert');
     expect(r.status).toBe(200);

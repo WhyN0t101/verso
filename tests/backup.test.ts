@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {paletteOf} from '../src/textures/draw';
 import {buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
-import {applyStatus, finishedLabel, isoDate, makeBook, sanitizeBook, todayIso} from '../src/data/books';
+import {applyStatus, finishedLabel, isoDate, makeBook, sanitizeBook, todayIso, updateBook} from '../src/data/books';
 import {DEFAULT_SETTINGS, sanitizeSettings} from '../src/data/settings';
 
 const book = (title: string) => makeBook({title, author: 'A', genre: 'Fantasy', summary: 's'});
@@ -144,5 +144,22 @@ describe('finishedOn', () => {
     expect(sanitizeBook({title: 'X', status: 'finished', finishedOn: 'yesterday'})).not.toHaveProperty('finishedOn');
     expect(sanitizeBook({title: 'Y', status: 'reading', finishedOn: '2026-04-09'})).not.toHaveProperty('finishedOn');
     expect(sanitizeBook({title: 'Z', finishedOn: '2026-04-09'})).not.toHaveProperty('finishedOn');
+  });
+});
+
+describe('changing a cover', () => {
+  it('drops the old tone when the new cover has none yet, and keeps a fresh one', () => {
+    const b = makeBook({title: 'Swap', cover: '/api/cover?id=1', tone: {h: 10, s: 20, l: 30}});
+    updateBook(b, {title: 'Swap', cover: '/api/cover?id=2'});
+    expect(b.cover).toBe('/api/cover?id=2');
+    expect(b.tone).toBeUndefined();
+    updateBook(b, {title: 'Swap', cover: '/api/cover?id=3', tone: {h: 200, s: 50, l: 40}});
+    expect(b.tone).toEqual({h: 200, s: 50, l: 40});
+  });
+  it('removing the cover returns to the generated one', () => {
+    const b = makeBook({title: 'Plain', cover: '/api/cover?id=1', tone: {h: 1, s: 2, l: 3}});
+    updateBook(b, {title: 'Plain'});
+    expect(b).not.toHaveProperty('cover');
+    expect(b).not.toHaveProperty('tone');
   });
 });

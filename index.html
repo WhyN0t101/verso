@@ -90,8 +90,10 @@
     <div id="fCoverRow" class="coverrow hidden">
       <img id="fCoverImg" alt="Cover preview">
       <div><span id="fCoverNote">Cover found. The book on your shelf takes its colour from it.</span>
-      <button class="btn" type="button" id="fCoverRemove">Remove cover</button></div>
+      <div class="coverbtns"><button class="btn" type="button" id="fCoverChange">Change cover</button>
+      <button class="btn" type="button" id="fCoverRemove">Remove cover</button></div></div>
     </div>
+    <div id="fCovers" class="covers hidden" role="group" aria-label="Cover choices"></div>
     <label for="fTitle">Title</label>
     <input id="fTitle" required maxlength="90">
     <label for="fAuthor">Author</label>

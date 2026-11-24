@@ -1,7 +1,8 @@
 import type {Book, BookDraft, Tone} from '../types';
+import type {CoverChoice as Candidate} from '../api';
 import {$} from '../util';
 import {GENRES} from '../../shared/genres';
-import {fetchWork, searchBooks, type SearchResult} from '../api';
+import {fetchCoverChoices, fetchWork, searchBooks, type SearchResult} from '../api';
 import {dominantTone, loadCover} from '../covers';
 
 type Input = HTMLInputElement | HTMLTextAreaElement;
@@ -14,6 +15,7 @@ let editing: string | null = null;
 let searchTimer = 0;
 let searchCtl: AbortController | null = null;
 let workCtl: AbortController | null = null;
+let coversCtl: AbortController | null = null;
 interface CoverChoice {
   url: string;
   tone?: Tone;
@@ -76,8 +78,54 @@ async function runSearch(q: string): Promise<void> {
 }
 
 function showCover(): void {
-  $('fCoverRow').classList.toggle('hidden', !cover);
+  // Editing always offers the cover controls, even for a book that has none yet.
+  $('fCoverRow').classList.toggle('hidden', !cover && editing === null);
+  $('fCoverImg').classList.toggle('hidden', !cover);
+  $('fCoverRemove').classList.toggle('hidden', !cover);
+  $('fCoverNote').textContent = cover ? 'The book on your shelf takes its colour from this cover.' : 'No cover. A generated one is used.';
   if (cover) $<HTMLImageElement>('fCoverImg').src = cover.url;
+}
+
+function renderCoverChoices(choices: Candidate[]): void {
+  const box = $('fCovers');
+  box.replaceChildren();
+  box.classList.toggle('hidden', choices.length === 0);
+  for (const c of choices) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cover-choice';
+    btn.title = [c.title, c.year].filter(Boolean).join(', ');
+    btn.setAttribute('aria-label', `Use cover of ${btn.title || 'this edition'}`);
+    const img = document.createElement('img');
+    img.src = c.cover; // medium: the small size is too soft for a thumbnail this big
+    img.alt = '';
+    img.loading = 'lazy';
+    btn.appendChild(img);
+    btn.addEventListener('click', () => {
+      renderCoverChoices([]);
+      setStatus('');
+      pickCover(c.cover);
+    });
+    box.appendChild(btn);
+  }
+}
+
+async function changeCover(): Promise<void> {
+  const title = f('fTitle').value.trim();
+  if (title.length < 2) return setStatus('Enter a title first, then choose a cover.');
+  coversCtl?.abort();
+  const ctl = (coversCtl = new AbortController());
+  setStatus('Looking for covers…');
+  try {
+    const choices = await fetchCoverChoices(title, f('fAuthor').value.trim(), ctl.signal);
+    renderCoverChoices(choices);
+    setStatus(choices.length ? 'Choose a cover.' : 'No covers found for this book.');
+  } catch (err) {
+    if (ctl.signal.aborted) return;
+    console.warn('cover choices failed', err);
+    renderCoverChoices([]);
+    setStatus('Could not load covers right now.', () => void changeCover());
+  }
 }
 
 function pickCover(url: string | null): void {
@@ -151,7 +199,11 @@ export function initForm(onSave: (draft: BookDraft, editingId: string | null) =>
 
   $('fRetry').addEventListener('click', () => retryFn?.());
   $('fCancel').addEventListener('click', closeForm);
-  $('fCoverRemove').addEventListener('click', () => pickCover(null));
+  $('fCoverRemove').addEventListener('click', () => {
+    renderCoverChoices([]);
+    pickCover(null);
+  });
+  $('fCoverChange').addEventListener('click', () => void changeCover());
   $('form').addEventListener('submit', (ev) => {
     ev.preventDefault();
     void submit();
@@ -178,6 +230,7 @@ async function submit(): Promise<void> {
 export function closeForm(): void {
   searchCtl?.abort();
   workCtl?.abort();
+  coversCtl?.abort();
   clearTimeout(searchTimer);
   $('modal').classList.add('hidden');
 }
@@ -196,6 +249,7 @@ export function openForm(b: Book | null): void {
   f('fSummary').value = b?.summary ?? '';
   cover = b?.cover ? {url: b.cover, ...(b.tone ? {tone: b.tone} : {})} : null;
   coverReady = Promise.resolve();
+  renderCoverChoices([]);
   showCover();
   $('modal').classList.remove('hidden');
   setTimeout(() => f(b ? 'fTitle' : 'fSearch').focus(), 30);

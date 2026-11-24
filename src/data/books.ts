@@ -75,7 +75,9 @@ function applyDraftExtras(b: Book, d: BookDraft): void {
   else delete b.year;
   if (d.cover) {
     b.cover = d.cover;
+    // A new cover with no tone yet must not keep the old cover's colour; the background queue fills it in.
     if (d.tone) b.tone = d.tone;
+    else delete b.tone;
     // Shape the 3D book to the real cover so the image is not stretched.
     if (d.aspect) b.d = clamp(b.h * d.aspect, 0.9, 1.5);
   } else {
