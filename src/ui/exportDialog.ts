@@ -4,7 +4,7 @@ import {$, downloadBlob, slug} from '../util';
 import {drawCard, type CardFormat} from '../export/card';
 import {THEMES, type ThemeId} from '../export/themes';
 import {fontsReady} from '../fonts';
-import {loadCover} from '../covers';
+import {largeCover, loadCover} from '../covers';
 
 const HELP = 'If a download is blocked here, press and hold the image (or right click it) and choose Save image.';
 let book: Book | null = null;
@@ -17,7 +17,8 @@ async function render(): Promise<void> {
   const id = ++renderId;
   $('exMsg').textContent = 'Preparing your image…';
   await fontsReady;
-  const cover = book.cover ? await loadCover(book.cover) : null;
+  // The large size is only worth its bytes here; fall back to the medium one the shelf already has.
+  const cover = book.cover ? ((await loadCover(largeCover(book.cover))) ?? (await loadCover(book.cover))) : null;
   if (id !== renderId) return;
   const canvas = drawCard(book, state.fmt, cover, state.theme);
   const out = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));

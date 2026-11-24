@@ -1,4 +1,5 @@
 import {describe, expect, it} from 'vitest';
+import {largeCover} from '../src/covers';
 import {cardQuote, fitCover, type FitInput} from '../src/export/layout';
 import {THEMES, themeById} from '../src/export/themes';
 
@@ -32,5 +33,12 @@ describe('themes', () => {
   it('has unique ids and resolves an unknown id to the first theme', () => {
     expect(new Set(THEMES.map((t) => t.id)).size).toBe(THEMES.length);
     expect(themeById('nope' as never).id).toBe(THEMES[0]!.id);
+  });
+});
+
+describe('largeCover', () => {
+  it('adds or replaces the size parameter', () => {
+    expect(largeCover('/api/cover?id=1')).toBe('/api/cover?id=1&size=L');
+    expect(largeCover('/api/cover?id=1&size=M')).toBe('/api/cover?id=1&size=L');
   });
 });

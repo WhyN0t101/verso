@@ -23,6 +23,9 @@ export function loadCover(url: string): Promise<HTMLImageElement | null> {
   return p;
 }
 
+/** The proxy serves medium by default; the export card draws the cover large and asks for L. */
+export const largeCover = (url: string): string => (/[?&]size=/.test(url) ? url.replace(/size=[A-Za-z]/, 'size=L') : `${url}&size=L`);
+
 const BINS = 24;
 
 /**
