@@ -46,4 +46,6 @@ export interface Settings {
   wood: WoodId;
   light: LightId;
   background: Background;
+  /** One labelled bookcase per genre instead of insertion order. Absent in older saves, meaning off. */
+  groupByGenre?: boolean;
 }

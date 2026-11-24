@@ -141,6 +141,19 @@ $('menuBtn').addEventListener('click', (ev) => {
 menu.addEventListener('click', () => setMenu(false));
 document.addEventListener('click', () => setMenu(false));
 $('openStyle').addEventListener('click', openStyle);
+const showGroup = (): void => {
+  $('groupToggle').textContent = `Group by genre: ${state.settings.groupByGenre ? 'on' : 'off'}`;
+};
+showGroup();
+$('groupToggle').addEventListener('click', () => {
+  if (state.sel) deselect();
+  if (state.settings.groupByGenre) delete state.settings.groupByGenre;
+  else state.settings.groupByGenre = true;
+  persist();
+  showGroup();
+  refresh();
+  shelf?.focusCase(0);
+});
 
 $('exportBackup').addEventListener('click', () => {
   const name = `verso-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -163,6 +176,7 @@ $<HTMLInputElement>('importFile').addEventListener('change', async (ev) => {
     if (parsed.settings) state.settings = parsed.settings;
     persist();
     applyBackground(state.settings.background);
+    showGroup();
     shelf?.applySettings();
     refresh();
     const skipped = parsed.skipped ? `, skipped ${parsed.skipped} unreadable` : '';

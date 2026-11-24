@@ -17,5 +17,6 @@ export function sanitizeSettings(x: unknown): Settings {
     wood: WOODS.includes(o.wood as string) ? (o.wood as Settings['wood']) : 'walnut',
     light: LIGHTS.includes(o.light as string) ? (o.light as Settings['light']) : 'warm',
     background,
+    ...(o.groupByGenre === true ? {groupByGenre: true} : {}),
   };
 }

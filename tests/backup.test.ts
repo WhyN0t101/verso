@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
 import {makeBook, sanitizeBook} from '../src/data/books';
-import {DEFAULT_SETTINGS} from '../src/data/settings';
+import {DEFAULT_SETTINGS, sanitizeSettings} from '../src/data/settings';
 
 const book = (title: string) => makeBook({title, author: 'A', genre: 'Fantasy', summary: 's'});
 
@@ -71,5 +71,17 @@ describe('reading status', () => {
     expect(parseBackup(buildBackup([b], DEFAULT_SETTINGS)).books[0]?.status).toBe('finished');
     const old = JSON.stringify({app: 'verso', version: 1, books: [{title: 'Legacy', author: 'X', rating: 2}]});
     expect(parseBackup(old).books[0]).toMatchObject({title: 'Legacy', rating: 2});
+  });
+});
+
+describe('groupByGenre setting', () => {
+  it('is off by default and survives only as a real true', () => {
+    expect(sanitizeSettings(undefined)).not.toHaveProperty('groupByGenre');
+    expect(sanitizeSettings({groupByGenre: 'yes'})).not.toHaveProperty('groupByGenre');
+    expect(sanitizeSettings({groupByGenre: true}).groupByGenre).toBe(true);
+  });
+  it('round trips through a backup', () => {
+    const parsed = parseBackup(buildBackup([book('G')], {...DEFAULT_SETTINGS, groupByGenre: true}));
+    expect(parsed.settings?.groupByGenre).toBe(true);
   });
 });

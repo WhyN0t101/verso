@@ -4,7 +4,7 @@ A 3D bookshelf for your reading life. Books stand on a Three.js shelf, search di
 
 ## Features
 
-- Procedural 3D shelf with hover, click, search dimming, pull-out animation, vertical panning, and a flat list view (also the fallback without WebGL).
+- A wall of procedural 3D bookcases (4 rows each, new cases appear to the right) with hover, click, search and status dimming, pull-out animation, horizontal panning (drag, wheel, swipe with snap on touch), position dots, and a flat list view (also the fallback without WebGL). Search and filters move the camera to the first match. Optional "Group by genre" gives each genre its own labelled bookcase.
 - Add dialog with search-as-you-type on Open Library; summary from the works endpoint, falling back to Google Books. Every field stays editable.
 - Real covers through an own-origin proxy, so the export canvas is never tainted. Spine colour comes from the cover's dominant colour; a generated cover is the fallback.
 - Notes and a 1 to 5 star rating per book.
@@ -51,7 +51,7 @@ Responses go through the Workers Cache API and carry `Cache-Control` headers. Su
 shared/         genre list and mapping, used by the Worker and the app
 src/worker.ts   Cloudflare Worker: /api/search and /api/cover
 src/data/       book model, storage, settings, backup/import
-src/scene/      Three.js shelf: build, camera, picking, animation, lazy textures
+src/scene/      Three.js wall: wall.ts (pure layout and camera targeting), shelf.ts, room.ts (floor and lamps)
 src/textures/   canvas drawing for spines and generated covers
 src/export/     export card drawing
 src/ui/         panel, add/edit form, export dialog, style dialog, list view

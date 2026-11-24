@@ -4,8 +4,9 @@ import {state} from '../state';
 import {matches} from '../search';
 import {clamp, hsl, rng} from '../util';
 import {LIGHTS, WOODS, type WoodPreset} from '../presets';
-import {drawCover, paletteOf, sat, spineCanvas} from '../textures/draw';
+import {SERIF, drawCover, paletteOf, sat, spineCanvas} from '../textures/draw';
 import {loadCover} from '../covers';
+import {createRoom} from './room';
 import {CASE_ROWS, caseX, clampCase, firstMatchCase, layoutWall, nearestCase, snapCase, type Wall} from './wall';
 
 export interface ShelfHooks {
@@ -137,6 +138,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
   applySettings();
 
+  const room = createRoom(scene);
   const frame = new THREE.Group();
   const bookRoot = new THREE.Group();
   scene.add(frame, bookRoot);
@@ -196,9 +198,47 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     m.castShadow = m.receiveShadow = true;
     return m;
   }
+  /** Small brass-style plate on the plinth naming the genre of a bookcase. */
+  function genrePlate(label: string, ox: number): THREE.Mesh {
+    const w = Math.min(Wtot * 0.8, 3.2);
+    const h = 0.22;
+    const c = document.createElement('canvas');
+    c.width = 640;
+    c.height = Math.round((640 * h) / w);
+    const g = c.getContext('2d');
+    if (!g) throw new Error('2D canvas unavailable');
+    g.fillStyle = '#2a1b0c';
+    g.fillRect(0, 0, c.width, c.height);
+    g.strokeStyle = '#e2b36b';
+    g.lineWidth = 3;
+    g.strokeRect(3, 3, c.width - 6, c.height - 6);
+    g.fillStyle = '#f6ead4';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    let fs = c.height * 0.58;
+    g.font = `600 ${fs}px ${SERIF}`;
+    while (g.measureText(label).width > c.width - 40 && fs > 10) {
+      fs -= 2;
+      g.font = `600 ${fs}px ${SERIF}`;
+    }
+    g.fillText(label, c.width / 2, c.height / 2 + 2);
+    const map = new THREE.CanvasTexture(c);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = maxAniso;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({map}));
+    m.position.set(ox, -Hs / 2 - 0.15, DEPTH / 2 + 0.07);
+    m.userData.plate = true;
+    return m;
+  }
   function clearFrame(): void {
     for (const m of frame.children.slice()) {
-      (m as THREE.Mesh).geometry.dispose();
+      const mesh = m as THREE.Mesh;
+      mesh.geometry.dispose();
+      // Genre plates own their texture and material; the shared wood material is left alone.
+      if (mesh.userData.plate) {
+        (mesh.material as THREE.MeshBasicMaterial).map?.dispose();
+        (mesh.material as THREE.Material).dispose();
+      }
       frame.remove(m);
     }
   }
@@ -265,11 +305,12 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     pruneTextures();
     const keepCase = nearestCase(panTarget, pitch, wall.cases.length);
     innerW = WIDTHS[bucket < 0 ? 1 : bucket] ?? 4.2;
-    wall = layoutWall(state.books, innerW, false);
+    wall = layoutWall(state.books, innerW, !!state.settings.groupByGenre);
     const R = CASE_ROWS;
     Hs = R * ROW_H + BOARD;
     Wtot = innerW + 2 * SIDE;
-    Htot = Hs + 0.55;
+    // Headroom above and below so the lamps and the floor fit in the picture.
+    Htot = Hs + 1.5;
     const oldPitch = pitch;
     pitch = Wtot + 0.24;
     for (const c of wall.cases) {
@@ -280,6 +321,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       for (let i = 0; i <= R; i++) frame.add(box(innerW, BOARD, DEPTH, woodMat, ox, -Hs / 2 + BOARD / 2 + i * ROW_H, 0));
       frame.add(box(Wtot + 0.24, 0.16, DEPTH + 0.12, woodMat, ox, Hs / 2 + 0.08, 0.03));
       frame.add(box(Wtot + 0.12, 0.3, DEPTH + 0.06, woodMat, ox, -Hs / 2 - 0.15, 0.02));
+      if (c.label) frame.add(genrePlate(c.label, ox));
     }
     if (pitch !== oldPitch) panTarget = panCur = caseX(keepCase, pitch);
     wall.cases.forEach((c) => c.rows.forEach((row, k) => {
@@ -316,6 +358,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         pickables.push(mesh);
       }
     }));
+    room.layout({pitch, count: wall.cases.length, height: Hs, depth: DEPTH});
     viewKey = '';
     shadowCase = -1;
     // The shadow map covers five cases around the camera and is re-aimed when the nearest case changes.
