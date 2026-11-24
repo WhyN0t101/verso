@@ -9,19 +9,22 @@ canvas#gl.pointer{cursor:pointer}
 #bar>*{pointer-events:auto}
 .brand{font-family:var(--serif);font-weight:700;font-size:22px;white-space:nowrap}
 .brand small{font:500 12px var(--sans);color:var(--mute);margin-left:8px}
-#q{flex:1;min-width:0;max-width:420px;margin-left:auto;background:rgba(255,255,255,.08);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:10px 16px;font:500 15px var(--sans);outline:none}
-#statusFilter{background:rgba(255,255,255,.08);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:10px 12px;font:500 14px var(--sans);outline:none;cursor:pointer}
-#statusFilter option{background:#1f150e;color:var(--ink)}
-#statusFilter:focus,#statusFilter.active{border-color:var(--acc)}
-.chips{display:flex;gap:6px;margin:6px 0 2px}
+#q{flex:1;min-width:0;max-width:420px;margin-left:auto;background:rgba(255,255,255,.08);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:10px 16px;font:500 15px var(--sans)}
+#statusChips{display:flex;gap:4px;flex-shrink:0}
+.statuschip{display:inline-flex;align-items:center;gap:7px;background:none;color:var(--mute);border:1px solid transparent;border-radius:8px;padding:8px 10px;font:500 14px var(--sans);cursor:pointer;white-space:nowrap}
+.statuschip:hover{color:var(--ink)}
+.statuschip[aria-pressed=true]{color:var(--ink);border-color:var(--line);background:rgba(238,231,214,.1)}
+.statuschip .n{color:var(--mute);font-size:13px}
+/* Status is shown by shape, not hue: ring, half, filled. */
+.shape{display:inline-block;width:11px;height:11px;border-radius:50%;border:1.5px solid currentColor;flex-shrink:0}
+.shape.reading{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
+.shape.finished{background:currentColor}
+.chips{display:flex;gap:6px;margin:8px 0 2px;flex-wrap:wrap}
 #pFinishedRow{display:flex;align-items:center;gap:8px;margin:6px 0 2px;font:500 13px var(--sans);color:var(--mute)}
 #pFinished{background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:4px 8px;font:500 13px var(--sans);color-scheme:dark}
-.chip{background:transparent;color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font:500 11px var(--sans);letter-spacing:.06em;cursor:pointer}
-.chip:hover{border-color:var(--mute)}
-.chip.on{color:#2a1b0c;border-color:transparent}
-.chip.on.wishlist{background:#9fb8d6}
-.chip.on.reading{background:var(--acc)}
-.chip.on.finished{background:#9cc79a}
+.chip{display:inline-flex;align-items:center;gap:7px;background:none;color:var(--mute);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font:500 14px var(--sans);cursor:pointer}
+.chip:hover{color:var(--ink)}
+.chip.on{color:var(--ink);border-color:var(--ink);background:rgba(238,231,214,.1)}
 #q::placeholder{color:var(--mute)}
 #q:focus{border-color:var(--acc)}
 .btn{background:rgba(255,255,255,.08);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font:500 14px var(--sans);cursor:pointer;white-space:nowrap}
@@ -51,22 +54,22 @@ body.selecting canvas#gl{cursor:pointer}
 #panel{position:fixed;z-index:7;top:var(--bar-h);right:0;height:calc(100% - var(--bar-h));width:min(400px,92vw);background:var(--panel);backdrop-filter:blur(10px);border-left:1px solid var(--line);padding:56px 24px 24px;overflow-y:auto;transform:translateX(105%);transition:transform .45s cubic-bezier(.2,.8,.2,1)}
 #panel.open{transform:none}
 #close{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font-size:20px;cursor:pointer}
-.pill{display:inline-block;font:500 11px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--acc);border:1px solid rgba(226,179,107,.5);padding:4px 10px;border-radius:999px}
-#pTitle{font-family:var(--serif);font-size:30px;line-height:1.15;margin:14px 0 4px}
+.pill{display:inline-block;font:500 13px var(--sans);color:var(--mute);border:1px solid var(--line);padding:3px 11px;border-radius:999px}
+#pTitle{font-family:var(--serif);font-weight:700;font-size:30px;line-height:1.15;margin:14px 0 4px}
 #pAuthor{color:var(--mute);font-size:15px;margin-bottom:10px}
 #pStars{display:flex;gap:4px;margin-bottom:6px}
 #pStars span{font-size:26px;cursor:pointer;color:rgba(255,255,255,.2);line-height:1;user-select:none}
 #pStars span.on{color:var(--acc)}
-h3{font:500 11px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin:20px 0 8px}
-#pSummary{margin:0;line-height:1.55;font-size:15px}
-#pNotes{width:100%;min-height:150px;resize:vertical;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:12px;font:500 15px/1.5 var(--sans);outline:none}
+h3{font:500 13px var(--sans);color:var(--mute);margin:22px 0 8px}
+#pSummary{margin:0;line-height:1.6;font:400 17px/1.6 var(--serif);max-width:62ch}
+#pNotes{width:100%;min-height:150px;resize:vertical;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:12px;font:400 17px/1.6 var(--serif)}
 #pNotes:focus{border-color:var(--acc)}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .overlay{position:fixed;inset:0;z-index:20;background:rgba(10,6,4,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;width:min(460px,100%);max-height:92vh;overflow:auto}
 .card h2{font-family:var(--serif);margin:0 0 14px;font-size:24px}
-.card label{display:block;font:500 11px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:12px 0 6px}
-.card input,.card textarea{width:100%;background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 12px;font:500 15px var(--sans);outline:none}
+.card label{display:block;font:500 13px var(--sans);color:var(--mute);margin:12px 0 6px}
+.card input,.card textarea{width:100%;background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px 12px;font:500 15px var(--sans)}
 .card input:focus,.card textarea:focus{border-color:var(--acc)}
 .seg{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
 #exCard{width:min(560px,100%)}
@@ -92,7 +95,7 @@ h3{font:500 11px var(--sans);letter-spacing:.14em;text-transform:uppercase;color
 .status{font-size:13px;color:var(--mute);margin:8px 0 0}
 .results{list-style:none;margin:8px 0 0;padding:4px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.04);max-height:210px;overflow:auto}
 .results button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:8px 10px;color:var(--ink);font:500 14px var(--sans);cursor:pointer}
-.results button:hover,.results button:focus-visible{background:rgba(255,255,255,.1);outline:none}
+.results button:hover,.results button:focus-visible{background:rgba(255,255,255,.1)}
 .res-title{font:700 15px var(--serif)}
 .res-meta{color:var(--mute);font-size:13px}
 .coverrow{display:flex;gap:12px;align-items:center;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.04);font-size:13px;color:var(--mute)}
@@ -113,7 +116,7 @@ label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;col
   /* The brand gives way so search keeps a usable width next to the status filter. */
   .brand{display:none}
   #q{margin-left:0;padding:10px 12px}
-  #statusFilter{padding:10px 8px}
+
 }
 
 /* Section index: a rail beside the shelf on wide screens, a bar and sheet below it on narrow ones. */
@@ -142,3 +145,17 @@ body.list-mode #sections,body.list-mode #sectionBar,body.list-mode #sectionSheet
 .cover-choice{padding:0;border:2px solid transparent;border-radius:6px;background:rgba(255,255,255,.06);cursor:pointer;aspect-ratio:2/3;overflow:hidden}
 .cover-choice:hover,.cover-choice:focus-visible{border-color:var(--acc)}
 .cover-choice img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* One focus ring for everything, in the lamp colour. */
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+html{scrollbar-color:#3d5a60 transparent;scrollbar-width:thin}
+#q,.card input,.card textarea,#pNotes,#pFinished{color-scheme:dark}
+input[type=search]::-webkit-search-cancel-button{filter:invert(.85)}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important;scroll-behavior:auto!important}
+}
+@media (max-width:760px){
+  :root{--bar-h:108px}
+  #bar{flex-wrap:wrap;row-gap:4px}
+  #statusChips{order:5;width:100%;overflow-x:auto;scrollbar-width:none}
+}

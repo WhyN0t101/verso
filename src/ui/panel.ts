@@ -43,7 +43,10 @@ function renderStatus(b: Book): void {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'chip' + (b.status === id ? ' on ' + id : '');
-    chip.textContent = STATUS_LABELS[id];
+    const shape = document.createElement('span');
+    shape.className = `shape ${id}`;
+    shape.setAttribute('aria-hidden', 'true');
+    chip.append(shape, document.createTextNode(STATUS_LABELS[id]));
     chip.setAttribute('aria-pressed', String(b.status === id));
     chip.addEventListener('click', () => {
       applyStatus(b, b.status === id ? undefined : id);

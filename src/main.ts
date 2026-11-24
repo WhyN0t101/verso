@@ -65,6 +65,7 @@ function refresh(): void {
   $('empty').classList.toggle('hidden', n > 0 || listMode);
   setGenreOptions([...new Set(state.books.map((b) => b.genre))].sort());
   shelf?.rebuild();
+  renderStatusChips();
   if (listMode) renderList(activate);
 }
 
@@ -105,7 +106,8 @@ initPanel({
   onExport: (b) => openExport(b),
   onChange() {
     persist();
-    // A status edit can move the book in or out of the active filter.
+    // A status edit changes the chip counts and can move the book in or out of the active filter.
+    renderStatusChips();
     if (listMode && state.status) renderList(activate);
   },
   onDelete(b) {
@@ -251,14 +253,39 @@ $('q').addEventListener('input', (ev) => {
   if (listMode) renderList(activate);
   shelf?.revealMatch();
 });
-$<HTMLSelectElement>('statusFilter').addEventListener('change', (ev) => {
-  const sel = ev.target as HTMLSelectElement;
-  state.status = sel.value as Status | '';
-  sel.classList.toggle('active', !!state.status);
-  if (state.sel) deselect();
-  if (listMode) renderList(activate);
-  shelf?.revealMatch();
-});
+function renderStatusChips(): void {
+  const box = $('statusChips');
+  box.replaceChildren();
+  const count = (st: Status): number => state.books.filter((b) => b.status === st).length;
+  const entries: [Status | '', string, number][] = [['', 'All', state.books.length], ['wishlist', 'Wishlist', count('wishlist')], ['reading', 'Reading', count('reading')], ['finished', 'Finished', count('finished')]];
+  for (const [value, label, n] of entries) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'statuschip';
+    btn.setAttribute('aria-pressed', String(state.status === value));
+    if (value) {
+      const shape = document.createElement('span');
+      shape.className = `shape ${value}`;
+      shape.setAttribute('aria-hidden', 'true');
+      btn.appendChild(shape);
+    }
+    const text = document.createElement('span');
+    text.textContent = label;
+    const num = document.createElement('span');
+    num.className = 'n';
+    num.textContent = String(n);
+    btn.append(text, num);
+    btn.addEventListener('click', () => {
+      state.status = value;
+      renderStatusChips();
+      if (state.sel) deselect();
+      if (listMode) renderList(activate);
+      shelf?.revealMatch();
+    });
+    box.appendChild(btn);
+  }
+}
+
 $('q').addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter' || !(state.q || state.status)) return;
   const first = state.books.find((b) => matches(b, state.q, state.status));

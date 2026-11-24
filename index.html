@@ -13,12 +13,7 @@
 <header id="bar">
   <div class="brand">Verso<small id="count"></small></div>
   <input id="q" type="search" placeholder="Search title, author or genre" autocomplete="off" aria-label="Search books">
-  <select id="statusFilter" aria-label="Filter by reading status">
-    <option value="">All</option>
-    <option value="wishlist">Wishlist</option>
-    <option value="reading">Reading</option>
-    <option value="finished">Finished</option>
-  </select>
+  <div id="statusChips" role="group" aria-label="Filter by reading status"></div>
   <button class="btn" id="selectBtn">Select</button>
   <button class="btn primary" id="add">Add book</button>
   <button class="btn icon" id="menuBtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false">&#8943;</button>

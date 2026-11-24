@@ -74,7 +74,7 @@ const FASCIA_H = 0.6;
 const PLINTH_H = 0.3;
 /** Empty space around the framed bookcase: room for the lamp above and the floor below. */
 const VIEW_MARGIN = 0.6;
-const HEADER_PX = 64;
+const headerPx = (): number => document.getElementById('bar')?.getBoundingClientRect().height ?? 64;
 /** Height of the section bar plus its gap on screens narrower than the rail breakpoint. */
 const NARROW_BAR_PX = 64;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
@@ -540,7 +540,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const H = innerHeight;
     const aspect = innerWidth / H;
     // The header and, on narrow screens, the section bar cover part of the canvas: frame the case in the free band.
-    const topInset = HEADER_PX;
+    const topInset = headerPx();
     const bottomInset = innerWidth <= 1000 ? NARROW_BAR_PX : 8;
     const free = Math.max(H - topInset - bottomInset, H * 0.5);
     const dist = Math.max(((v.h * H) / free / 2) / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.06 + DEPTH / 2;
@@ -588,7 +588,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const h = innerHeight;
     const mob = isMobile();
     const pw = mob ? 0 : Math.min(400, w * 0.92);
-    const top = 64;
+    const top = headerPx();
     const bot = mob ? h * 0.48 : h;
     const fx = mob ? w / 2 : (w - pw) / 2;
     const fy = (top + bot) / 2;

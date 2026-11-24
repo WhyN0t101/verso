@@ -1,5 +1,5 @@
 import type {Book} from '../types';
-import {SANS, SERIF, drawCover, letterSpacing, roundRect, wrapAll, wrapLines} from '../textures/draw';
+import {SANS, SERIF, drawCover, roundRect, wrapAll, wrapLines} from '../textures/draw';
 import {cardQuote, fitCover} from './layout';
 import {finishedLabel} from '../data/books';
 import {themeById, type ThemeId} from './themes';
@@ -21,14 +21,12 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   const acc = theme.accent(b);
   const pad = 84;
   g.textBaseline = 'alphabetic';
-  g.font = `500 24px ${SANS}`;
-  letterSpacing(g, 6);
+  g.font = `500 28px ${SANS}`;
   g.fillStyle = acc;
   g.textAlign = 'left';
-  g.fillText('VERSO', pad, pad + 8);
+  g.fillText('Verso', pad, pad + 8);
   g.textAlign = 'right';
-  g.fillText(b.genre.toUpperCase(), W - pad, pad + 8, W / 2 - pad);
-  letterSpacing(g, 0);
+  g.fillText(b.genre, W - pad, pad + 8, W / 2 - pad);
 
   const square = fmt === 'square';
   const idealCover = fmt === 'story' ? 820 : square ? 700 : 540;
@@ -62,7 +60,7 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   const finishedH = finished ? (square ? 40 : 46) : 0;
   const starsH = b.rating > 0 ? (square ? 66 : 70) : 0;
   const authorH = authorLines.length * (square ? 40 : 44);
-  const headH = starsH + titleLines.length * tfs * 1.14 + 6 + authorH + finishedH + 22 + 62;
+  const headH = starsH + titleLines.length * tfs * 1.14 + 6 + authorH + finishedH + 40;
 
   g.font = `italic 400 ${nfs}px ${SERIF}`;
   const wantLines = quote ? Math.min(wrapAll(g, quote.text, textW).length, fmt === 'story' ? 10 : 7) : 0;
@@ -139,17 +137,12 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
     y += square ? 40 : 44;
   }
   if (finished) {
-    g.font = `500 ${square ? 26 : 28}px ${SANS}`;
-    letterSpacing(g, 2);
+    g.font = `500 ${square ? 28 : 30}px ${SANS}`;
     g.fillStyle = acc;
-    g.fillText(finished.toUpperCase(), tx, y + 16);
-    letterSpacing(g, 0);
+    g.fillText(finished, tx, y + 16);
     y += finishedH;
   }
-  y += 22;
-  g.fillStyle = acc;
-  g.fillRect(align === 'center' ? tx - 30 : tx, y, 60, 4);
-  y += 62;
+  y += 40;
   if (quote && quoteLines > 0) {
     g.font = `italic 400 ${nfs}px ${SERIF}`;
     g.fillStyle = theme.ink;
@@ -160,13 +153,9 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
     }
   }
   g.textAlign = 'center';
-  g.font = `500 22px ${SANS}`;
-  letterSpacing(g, 3);
+  g.font = `500 26px ${SANS}`;
   g.fillStyle = theme.mute;
-  g.globalAlpha = 0.7;
-  g.fillText('SHELVED WITH VERSO', W / 2, H - pad + 6);
-  g.globalAlpha = 1;
-  letterSpacing(g, 0);
+  g.fillText('Shelved with Verso', W / 2, H - pad + 6);
   return c;
 }
 
