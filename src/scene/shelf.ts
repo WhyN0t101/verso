@@ -766,7 +766,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         // A warm glow on every face marks the books chosen in Select mode.
         e.mats.forEach((m, i) => {
           if (i === MAT.cover) return; // the cover face keeps its own glow
-          m.emissive.setHex(picked ? 0xe2b36b : 0x000000);
+          m.emissive.setHex(picked ? 0xf2b650 : 0x000000);
           m.emissiveIntensity = picked ? 0.45 : 0;
         });
         moved++;

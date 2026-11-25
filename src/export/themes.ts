@@ -93,7 +93,7 @@ export const THEMES: Theme[] = [
     label: 'Spine shelf',
     ink: '#f6ead4',
     mute: 'rgba(246,234,212,.78)',
-    accent: () => '#e2b36b',
+    accent: () => '#f2b650',
     plank: true,
     shadow: 40,
     paint(g, W, H, b) {
