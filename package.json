@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "description": "A 3D bookshelf for your reading life.",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:vite": "vite",
     "worker": "wrangler dev",
     "build": "tsc --noEmit && vite build",
     "preview": "wrangler dev",

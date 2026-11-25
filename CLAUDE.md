@@ -26,8 +26,9 @@ prototype/      legacy single-file prototype, reference only
 ```sh
 npm install
 npm run build        # typecheck + vite build to dist/
-npm run worker       # wrangler dev on :8787 (Worker + dist/)
-npm run dev          # Vite with HMR; proxies /api to :8787, so run `npm run worker` too
+npm run worker       # wrangler dev on :8787 (Worker + dist/), the Worker alone
+npm run dev          # Vite (HMR) and wrangler dev together; Vite proxies /api to :8787
+npm run dev:vite     # Vite alone; the app then says the Worker is not running when it calls /api
 npm test             # vitest run
 # dev only: open http://localhost:5173/?books=150 for a generated 150-book shelf (src/dev/seedBooks.ts)
 npm run typecheck

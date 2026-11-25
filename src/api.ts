@@ -2,8 +2,16 @@ import type {SearchResult, WorkDetail} from './worker';
 
 export type {SearchResult, WorkDetail};
 
+/** Dev only: the Vite proxy could not reach the Worker. */
+export class WorkerDownError extends Error {
+  constructor() {
+    super('The Worker is not running, so the API is unreachable. Start it with npm run dev (starts both) or npm run worker.');
+  }
+}
+
 async function get<T>(params: Record<string, string>, signal: AbortSignal, path = '/api/search'): Promise<T> {
   const r = await fetch(`${path}?` + new URLSearchParams(params), {signal});
+  if (import.meta.env.DEV && r.status === 503 && (await r.clone().json().catch(() => null))?.error === 'worker-down') throw new WorkerDownError();
   if (!r.ok) throw new Error(`search api ${r.status}`);
   return r.json() as Promise<T>;
 }

@@ -21,13 +21,14 @@ npm run build
 npm run worker                   # Worker + built assets on http://localhost:8787
 ```
 
-For UI work with hot reload, run `npm run worker` in one terminal and `npm run dev` in another; Vite proxies `/api` to the Worker. Open Library alone gives a complete add-a-book flow. Without `GOOGLE_BOOKS_API_KEY` the Google Books summary fallback is skipped.
+For UI work with hot reload, run `npm run dev`: it starts Vite and the Worker together, and Vite proxies `/api` to the Worker. If the Worker is not running the app says so. Open Library alone gives a complete add-a-book flow. Without `GOOGLE_BOOKS_API_KEY` the Google Books summary fallback is skipped.
 
 ## Scripts
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Vite dev server (proxies `/api` to `wrangler dev`) |
+| `npm run dev` | Vite dev server and `wrangler dev` together (Vite proxies `/api`) |
+| `npm run dev:vite` | Vite alone |
 | `npm run worker` | `wrangler dev`: the Worker plus `dist/` assets |
 | `npm run build` | Typecheck, then production build to `dist/` |
 | `npm run deploy` | `wrangler deploy` |

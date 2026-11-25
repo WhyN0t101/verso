@@ -2,7 +2,7 @@ import type {Book, BookDraft, Tone} from '../types';
 import type {CoverChoice as Candidate} from '../api';
 import {$} from '../util';
 import {GENRES} from '../../shared/genres';
-import {fetchCoverChoices, fetchWork, searchBooks, type SearchResult} from '../api';
+import {WorkerDownError, fetchCoverChoices, fetchWork, searchBooks, type SearchResult} from '../api';
 import {dominantTone, loadCover} from '../covers';
 
 type Input = HTMLInputElement | HTMLTextAreaElement;
@@ -28,6 +28,9 @@ let coverReady: Promise<void> = Promise.resolve();
 
 /** Fields the user typed in since the last pick; auto-fill never overwrites these. */
 const touched = new Set<string>();
+
+/** In dev the real cause (Worker not running) beats the generic wording. */
+const why = (err: unknown, fallback: string): string => (err instanceof WorkerDownError ? err.message : fallback);
 
 let retryFn: (() => void) | null = null;
 
@@ -73,7 +76,7 @@ async function runSearch(q: string): Promise<void> {
     if (ctl.signal.aborted) return;
     console.warn('book search failed', err);
     renderResults([]);
-    setStatus('Search is unavailable right now. Retry, or fill in the details by hand.', () => void runSearch(q));
+    setStatus(why(err, 'Search is unavailable right now. Retry, or fill in the details by hand.'), () => void runSearch(q));
   }
 }
 
@@ -124,7 +127,7 @@ async function changeCover(): Promise<void> {
     if (ctl.signal.aborted) return;
     console.warn('cover choices failed', err);
     renderCoverChoices([]);
-    setStatus('Could not load covers right now.', () => void changeCover());
+    setStatus(why(err, 'Could not load covers right now.'), () => void changeCover());
   }
 }
 
@@ -177,7 +180,7 @@ async function lookupSummary(r: SearchResult): Promise<void> {
   } catch (err) {
     if (ctl.signal.aborted) return;
     console.warn('summary lookup failed', err);
-    setStatus('Could not load a summary. Retry, or write your own.', () => void lookupSummary(r));
+    setStatus(why(err, 'Could not load a summary. Retry, or write your own.'), () => void lookupSummary(r));
   }
 }
 
