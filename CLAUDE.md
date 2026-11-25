@@ -10,7 +10,7 @@ Vite, TypeScript, three.js, Vitest. Deployed as a Cloudflare Worker with static 
 
 ```
 shared/         genre list and mapping (used by Worker and app)
-src/worker.ts   Worker: /api/search, /api/cover; everything else goes to ASSETS
+src/worker.ts   Worker: /api/search, /api/covers, /api/cover; everything else goes to ASSETS
 src/api.ts      browser client for /api/search
 src/data/       book model, storage, settings, backup/import
 src/scene/      three.js shelf
