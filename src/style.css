@@ -120,7 +120,7 @@ label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;col
 }
 
 /* Section index: a rail beside the shelf on wide screens, a bar and sheet below it on narrow ones. */
-#sections{background:linear-gradient(90deg,rgba(20,12,8,.88) 82%,transparent);padding:6px 14px 6px 0;position:fixed;left:16px;top:84px;bottom:24px;width:188px;z-index:4;overflow-y:auto;scrollbar-width:thin}
+#sections{background:linear-gradient(90deg,rgba(16,27,30,.9) 82%,transparent);padding:6px 14px 6px 0;position:fixed;left:16px;top:84px;bottom:24px;width:188px;z-index:4;overflow-y:auto;scrollbar-width:thin}
 #sectionList,#sectionSheetList{list-style:none;margin:0;padding:0}
 .section-item{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;border-left:2px solid transparent;color:var(--mute);font:500 15px var(--sans);padding:7px 10px;cursor:pointer}
 .section-item:hover{color:var(--ink)}
@@ -159,3 +159,10 @@ input[type=search]::-webkit-search-cancel-button{filter:invert(.85)}
   #bar{flex-wrap:wrap;row-gap:4px}
   #statusChips{order:5;width:100%;overflow-x:auto;scrollbar-width:none}
 }
+
+.section-row{display:flex;align-items:stretch}
+.section-row .section-item{flex:1}
+.section-toggle{background:none;border:0;color:var(--mute);cursor:pointer;padding:0 8px;font-size:13px}
+.section-toggle:hover{color:var(--ink)}
+.section-sub{list-style:none;margin:0 0 4px 12px;padding:0}
+.section-subitem{font-size:14px;padding:5px 10px}

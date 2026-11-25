@@ -6,8 +6,8 @@ export const CASE_ROWS = 4;
 const MIN_ROWS = 2;
 const ROW_GAP = 0.025;
 const ROW_MARGIN = 0.12;
-/** A genre with fewer books than this is shelved under "Other". */
-export const MIN_SECTION = 3;
+/** Every genre is its own section until there are more than this many; then the smallest fold into Other. */
+export const MAX_SECTIONS = 12;
 export const OTHER = 'Other';
 /** Width of the slim bookend that separates two sections on a shared shelf. */
 export const BOOKEND_W = 0.1;
@@ -29,6 +29,8 @@ export interface SectionPart {
   name: string;
   /** The section began in an earlier bookcase. */
   continued: boolean;
+  /** For Other: the genres folded into it. */
+  contains?: string[];
 }
 
 export interface Bookcase {
@@ -46,6 +48,8 @@ export interface SectionInfo {
   count: number;
   /** Bookcase where the section begins. */
   firstCase: number;
+  /** For Other: the genres folded into it, largest first. */
+  contains?: {name: string; count: number}[];
 }
 
 export interface Wall {
@@ -58,23 +62,37 @@ export interface Wall {
 interface Section {
   name: string;
   books: Book[];
+  contains?: {name: string; count: number}[];
 }
 
-/** Genres alphabetical, then Unsorted, then Other. Small genres fold into Other. Insertion order is kept inside a section. */
+/**
+ * One section per genre, alphabetical, then Unsorted, then Other. Only above MAX_SECTIONS genres are the
+ * smallest folded into Other, which then lists them. Insertion order is kept inside a section.
+ */
 export function groupSections(books: Book[]): Section[] {
   const by = new Map<string, Book[]>();
   for (const b of books) by.set(b.genre, [...(by.get(b.genre) ?? []), b]);
-  const named: Section[] = [];
-  const other: Book[] = [];
-  for (const [name, list] of by) {
-    if (name === OTHER || list.length < MIN_SECTION) other.push(...list);
-    else named.push({name, books: list});
+  const literalOther = by.get(OTHER) ?? [];
+  let named: Section[] = [...by].filter(([name]) => name !== OTHER).map(([name, list]) => ({name, books: list}));
+  let folded: Section[] = [];
+  if (named.length + (literalOther.length ? 1 : 0) > MAX_SECTIONS) {
+    const keep = new Set(
+      [...named]
+        .sort((a, c) => c.books.length - a.books.length || a.name.localeCompare(c.name))
+        .slice(0, MAX_SECTIONS - 1)
+        .map((x) => x.name),
+    );
+    folded = named.filter((x) => !keep.has(x.name));
+    named = named.filter((x) => keep.has(x.name));
   }
   named.sort((a, c) => (a.name === UNSORTED ? 1 : c.name === UNSORTED ? -1 : a.name.localeCompare(c.name)));
-  // Other keeps the order the books were added in, not the order the small genres were met.
+  const otherBooks = [...literalOther, ...folded.flatMap((x) => x.books)];
+  if (!otherBooks.length) return named;
+  // Other keeps the order the books were added in, not the order the genres were met.
   const order = new Map(books.map((b, i) => [b.id, i]));
-  other.sort((a, c) => (order.get(a.id) ?? 0) - (order.get(c.id) ?? 0));
-  return other.length ? [...named, {name: OTHER, books: other}] : named;
+  otherBooks.sort((a, c) => (order.get(a.id) ?? 0) - (order.get(c.id) ?? 0));
+  const contains = folded.map((x) => ({name: x.name, count: x.books.length})).sort((a, c) => c.count - a.count || a.name.localeCompare(c.name));
+  return [...named, {name: OTHER, books: otherBooks, ...(contains.length ? {contains} : {})}];
 }
 
 interface FlatRow {
@@ -130,22 +148,35 @@ export function layoutWall(books: Book[], innerW: number, groupByGenre: boolean)
     return {cases, caseOf, sections: info};
   }
   const firstCase = new Map<string, number>();
+  const byName = new Map(sections.map((x) => [x.name, x]));
   const counts = new Map<string, number>();
   for (const c of cases) {
     for (const p of c.rows.flat()) {
       const name = sectionOf.get(p.b.id) ?? '';
       counts.set(name, (counts.get(name) ?? 0) + 1);
       if (!firstCase.has(name)) firstCase.set(name, c.index);
-      if (!c.sections.some((s) => s.name === name)) c.sections.push({name, continued: (firstCase.get(name) ?? 0) < c.index});
+      if (!c.sections.some((s) => s.name === name)) {
+        const contains = byName.get(name)?.contains?.map((x) => x.name);
+        c.sections.push({name, continued: (firstCase.get(name) ?? 0) < c.index, ...(contains ? {contains} : {})});
+      }
     }
   }
-  const info = sections.map((s) => ({name: s.name, count: counts.get(s.name) ?? 0, firstCase: firstCase.get(s.name) ?? 0}));
+  const info = sections.map((s) => ({name: s.name, count: counts.get(s.name) ?? 0, firstCase: firstCase.get(s.name) ?? 0, ...(s.contains ? {contains: s.contains} : {})}));
   return {cases, caseOf, sections: info};
 }
 
-/** Text for a bookcase's fascia: "Fantasy", "Fantasy (continued) and Gothic", "Fantasy, Gothic and 2 more". */
+/** "Drama and Poetry", "Drama, Poetry and 3 more". */
+function shortList(names: string[]): string {
+  if (names.length <= 2) return names.join(' and ');
+  return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
+}
+
+/** Text for a bookcase's fascia: "Fantasy", "Fantasy (continued) and Gothic", "Other (Drama, Poetry and 3 more)". */
 export function fasciaText(parts: SectionPart[]): string {
-  const names = parts.map((p) => (p.continued ? `${p.name} (continued)` : p.name));
+  const names = parts.map((p) => {
+    const inside = p.contains?.length ? ` (${shortList(p.contains)})` : '';
+    return `${p.name}${p.continued ? ' (continued)' : ''}${inside}`;
+  });
   if (names.length <= 1) return names[0] ?? '';
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   if (names.length === 3) return `${names[0]}, ${names[1]} and ${names[2]}`;

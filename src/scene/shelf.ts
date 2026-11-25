@@ -532,6 +532,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     Object.assign(key.shadow.camera, {left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: 45});
     key.shadow.camera.updateProjectionMatrix();
     placeCamera(prev.size === 0);
+    // Straight away, not on the next frame: a genre edit must show in the jump list at once.
+    emitView();
   }
 
   /** Camera distance and height that frame the given bookcase so it fills the viewport. */
@@ -563,6 +565,17 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       camCY = f.cy;
     }
     force = true;
+  }
+
+  /** Tells the page what the wall holds and where the camera is heading; only when that changed. */
+  function emitView(): void {
+    const target = nearestCase(panTarget, pitch, wall.cases.length);
+    const vk = `${target}|${wall.sections.map((x) => `${x.name}:${x.count}:${x.firstCase}:${x.contains?.length ?? 0}`).join(',')}`;
+    if (vk === viewKey) return;
+    viewKey = vk;
+    const parts = wall.cases[target]?.sections ?? [];
+    const name = parts.length ? fasciaText(parts) : `Bookcase ${target + 1}`;
+    hooks.onView({caseIndex: target, caseCount: wall.cases.length, sections: wall.sections, current: name, here: parts.length ? parts.map((p) => p.name) : [name]});
   }
 
   function onResize(): void {
@@ -743,14 +756,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       shadowDirty = true;
       force = true;
     }
-    const target = nearestCase(panTarget, pitch, wall.cases.length);
-    const vk = `${target}|${wall.sections.map((x) => `${x.name}:${x.count}:${x.firstCase}`).join(',')}`;
-    if (vk !== viewKey) {
-      viewKey = vk;
-      const parts = wall.cases[target]?.sections ?? [];
-      const name = parts.length ? fasciaText(parts) : `Bookcase ${target + 1}`;
-      hooks.onView({caseIndex: target, caseCount: wall.cases.length, sections: wall.sections, current: name, here: parts.length ? parts.map((p) => p.name) : [name]});
-    }
+    emitView();
     const filtering = !!(state.q || state.status);
     const fk = `${state.q}|${state.status}`;
     if (fk !== filterKey) {

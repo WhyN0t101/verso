@@ -48,16 +48,52 @@ describe('layoutWall', () => {
 describe('grouped layout', () => {
   const genres = (spec: Record<string, number>) => Object.entries(spec).flatMap(([g, n]) => many(n, g).map((b, i) => ({...b, title: `${g}${i}`})));
 
-  it('merges genres with fewer than three books into Other, last', () => {
-    const books = genres({Sci: 4, Fantasy: 5, Poetry: 1, Drama: 2});
-    expect(groupSections(books).map((s) => [s.name, s.books.length])).toEqual([['Fantasy', 5], ['Sci', 4], ['Other', 3]]);
-    expect(layoutWall(books, 4.2, true).sections.map((s) => s.name)).toEqual(['Fantasy', 'Sci', 'Other']);
+  it('gives every genre its own section, even with one book, Unsorted then Other last', () => {
+    const books = genres({Sci: 4, Fantasy: 5, Poetry: 1, Drama: 2, Unsorted: 3});
+    expect(groupSections(books).map((s) => [s.name, s.books.length])).toEqual([['Drama', 2], ['Fantasy', 5], ['Poetry', 1], ['Sci', 4], ['Unsorted', 3]]);
+    expect(layoutWall(books, 4.2, true).sections.every((s) => !s.contains)).toBe(true);
   });
 
-  it('puts Unsorted before Other and merges a small Unsorted too', () => {
-    const books = genres({Unsorted: 3, Fantasy: 3, Poetry: 1});
-    expect(groupSections(books).map((s) => s.name)).toEqual(['Fantasy', 'Unsorted', 'Other']);
-    expect(groupSections(genres({Unsorted: 2, Fantasy: 3})).map((s) => s.name)).toEqual(['Fantasy', 'Other']);
+  it('keeps up to 12 genres as they are, and merges only above 12', () => {
+    const twelve = Object.fromEntries(Array.from({length: 12}, (_, i) => [`G${String.fromCharCode(65 + i)}`, 2]));
+    expect(groupSections(genres(twelve))).toHaveLength(12);
+    expect(groupSections(genres(twelve)).map((s) => s.name)).not.toContain('Other');
+    const thirteen = {...twelve, GM: 1};
+    const out = groupSections(genres(thirteen));
+    expect(out).toHaveLength(12);
+    expect(out.at(-1)!.name).toBe('Other');
+  });
+
+  it('folds the smallest genres into Other and says which ones', () => {
+    const spec: Record<string, number> = {Big1: 9, Big2: 8, Big3: 7, Big4: 6, Big5: 5, Big6: 5, Big7: 4, Big8: 4, Big9: 4, Big10: 3, Big11: 3, Tiny1: 1, Tiny2: 1, Mid: 2};
+    const out = groupSections(genres(spec));
+    expect(out).toHaveLength(12);
+    const other = out.at(-1)!;
+    expect(other.name).toBe('Other');
+    expect(other.contains).toEqual([{name: 'Mid', count: 2}, {name: 'Tiny1', count: 1}, {name: 'Tiny2', count: 1}]);
+    expect(other.books).toHaveLength(4);
+    const wall = layoutWall(genres(spec), 4.2, true);
+    expect(wall.sections.at(-1)).toMatchObject({name: 'Other', count: 4, contains: [{name: 'Mid', count: 2}, {name: 'Tiny1', count: 1}, {name: 'Tiny2', count: 1}]});
+    const partsWithOther = wall.cases.flatMap((c) => c.sections).filter((p) => p.name === 'Other');
+    expect(partsWithOther.length).toBeGreaterThan(0);
+    expect(partsWithOther.every((p) => p.contains?.join() === 'Mid,Tiny1,Tiny2')).toBe(true);
+  });
+
+  it('puts a genre literally called Other with the folded ones without listing itself', () => {
+    const spec = Object.fromEntries([...Array.from({length: 12}, (_, i) => [`G${String.fromCharCode(65 + i)}`, 3]), ['Other', 2]]);
+    const other = groupSections(genres(spec)).at(-1)!;
+    expect(other.name).toBe('Other');
+    expect(other.contains?.map((c) => c.name)).not.toContain('Other');
+    expect(other.books.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('moves a book to its new section as soon as its genre changes', () => {
+    const books = genres({Fantasy: 3, Sci: 3});
+    const before = layoutWall(books, 4.2, true);
+    expect(before.sections.map((s) => [s.name, s.count])).toEqual([['Fantasy', 3], ['Sci', 3]]);
+    const moved = books.map((b, i) => (i === 0 ? {...b, genre: 'Gothic'} : b));
+    const after = layoutWall(moved, 4.2, true);
+    expect(after.sections.map((s) => [s.name, s.count])).toEqual([['Fantasy', 2], ['Gothic', 1], ['Sci', 3]]);
   });
 
   it('flows small sections along shared shelves with a bookend between them', () => {
@@ -93,6 +129,8 @@ describe('fasciaText', () => {
     expect(fasciaText([part('Fantasy', true), part('Gothic')])).toBe('Fantasy (continued) and Gothic');
     expect(fasciaText([part('A'), part('B'), part('C')])).toBe('A, B and C');
     expect(fasciaText([part('A'), part('B'), part('C'), part('D'), part('E')])).toBe('A, B and 3 more');
+    expect(fasciaText([{name: 'Other', continued: false, contains: ['Drama', 'Poetry']}])).toBe('Other (Drama and Poetry)');
+    expect(fasciaText([{name: 'Other', continued: true, contains: ['A', 'B', 'C', 'D']}])).toBe('Other (continued) (A, B and 2 more)');
   });
 });
 
