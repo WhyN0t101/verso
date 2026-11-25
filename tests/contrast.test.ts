@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {MIN_CONTRAST, contrastRatio, hslToRgb, luminance, spineScheme} from '../src/textures/contrast';
-import {paletteOf, spineLightness} from '../src/textures/draw';
+import {SPINE_LIGHT, SPINE_SAT, paletteOf, spineLightness, spineLook} from '../src/textures/draw';
 import {makeBook} from '../src/data/books';
 
 describe('contrast maths', () => {
@@ -35,5 +35,37 @@ describe('spine ink', () => {
       const p = paletteOf(b);
       expect(spineScheme(p.h, p.s, spineLightness(b)).ratio).toBeGreaterThanOrEqual(MIN_CONTRAST);
     }
+  });
+});
+
+describe('spine harmony', () => {
+  const tone = (h: number, s: number, l: number) => makeBook({title: 'T', cover: '/api/cover?id=1', tone: {h, s, l}});
+
+  it('holds saturation and lightness of any cover colour in a restrained band', () => {
+    for (const [s, l] of [[100, 95], [0, 0], [100, 50], [5, 99], [100, 3]] as const) {
+      const b = tone(10, s, l);
+      expect(paletteOf(b).s).toBeGreaterThanOrEqual(SPINE_SAT[0]);
+      expect(paletteOf(b).s).toBeLessThanOrEqual(SPINE_SAT[1]);
+      expect(spineLightness(b)).toBeGreaterThanOrEqual(SPINE_LIGHT[0]);
+      expect(spineLightness(b)).toBeLessThanOrEqual(SPINE_LIGHT[1]);
+    }
+  });
+
+  it('still passes the ink contrast for every colour in the band', () => {
+    for (let h = 0; h < 360; h += 9) for (const [s, l] of [[100, 95], [0, 0], [100, 50], [30, 40]] as const) {
+      const b = tone(h, s, l);
+      const p = paletteOf(b);
+      expect(spineScheme(p.h, p.s, spineLightness(b)).ratio).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
+  });
+
+  it('keeps a shelf of books distinguishable: many different hue and lightness cells', () => {
+    const cells = new Set<string>();
+    for (let i = 0; i < 150; i++) {
+      const b = makeBook({title: `Book number ${i}`, cover: i % 2 ? '/api/cover?id=1' : undefined, tone: i % 2 ? {h: (i * 47) % 360, s: 40 + (i % 50), l: 20 + (i % 60)} : undefined});
+      const look = spineLook(b);
+      cells.add(`${Math.floor(look.h / 15)}:${Math.floor(look.l / 4)}`);
+    }
+    expect(cells.size).toBeGreaterThanOrEqual(60);
   });
 });

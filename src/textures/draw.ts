@@ -12,8 +12,11 @@ export interface Palette {
   h: number;
   s: number;
 }
+// Cover colours are pulled into a restrained band so a shelf reads as bound books, not a paint chart.
+export const SPINE_SAT = [22, 48] as const;
+export const SPINE_LIGHT = [28, 52] as const;
 export const paletteOf = (b: Book): Palette =>
-  b.tone ? {h: Math.round(b.tone.h), s: clamp(Math.round(b.tone.s), 12, 62)} : {h: b.hue, s: 40};
+  b.tone ? {h: Math.round(b.tone.h), s: clamp(Math.round(b.tone.s), SPINE_SAT[0], SPINE_SAT[1])} : {h: b.hue, s: 40};
 export const accOf = (b: Book) => hsl((paletteOf(b).h + 28) % 360, 55, 66);
 /** Saturation shifted from the palette base, kept in range. */
 export const sat = (p: Palette, delta: number) => clamp(p.s + delta, 0, 100);
@@ -70,9 +73,11 @@ function newCanvas(W: number, H: number): [HTMLCanvasElement, CanvasRenderingCon
   return [c, g];
 }
 
-/** Starting lightness of a spine: the cover's own lightness when known, else spread by the book's pattern. */
+/** Starting lightness of a spine: the cover's own lightness, held in range, else spread by the book's pattern. */
 export function spineLightness(b: Book): number {
-  return b.tone ? clamp(Math.round(b.tone.l), 30, 62) : 34 + (b.pattern % 4) * 6;
+  // A small per-book step keeps neighbours of one hue apart once the range is narrow.
+  const base = b.tone ? clamp(Math.round(b.tone.l), 28, 50) + ((b.pattern % 3) - 1) * 3 : 34 + (b.pattern % 4) * 5;
+  return clamp(base, SPINE_LIGHT[0], SPINE_LIGHT[1]);
 }
 
 /** Colours of a book's spine: base lightness nudged until the better of the two inks reads at 4.5:1 or more. */

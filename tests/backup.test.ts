@@ -93,7 +93,7 @@ describe('stored tone', () => {
     b.tone = {h: 200, s: 50, l: 40};
     const back = parseBackup(buildBackup([b], DEFAULT_SETTINGS)).books[0]!;
     expect(back.tone).toEqual({h: 200, s: 50, l: 40});
-    expect(paletteOf(back)).toEqual({h: 200, s: 50});
+    expect(paletteOf(back)).toEqual({h: 200, s: 48}); // 50 held to the top of the band
   });
   it('is optional: an older backup imports and falls back to the title hue', () => {
     const old = JSON.stringify({app: 'verso', version: 1, books: [{title: 'Old', cover: '/api/cover?id=5', hue: 77}]});
