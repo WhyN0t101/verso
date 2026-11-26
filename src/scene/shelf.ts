@@ -240,14 +240,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     band(0, c.height, 0, c.height * 0.8, 0.3);
     band(0, 0, c.width * 0.14, 0, 0.4);
     band(c.width, 0, c.width * 0.86, 0, 0.4);
-    // Back boards: a dark joint with a lit edge beside it between each pair of planks.
-    for (let i = 1; i < 6; i++) {
-      const x = Math.round((c.width * i) / 6);
-      g.fillStyle = 'rgba(0,0,0,.35)';
-      g.fillRect(x - 1, 0, 1.5, c.height);
-      g.fillStyle = 'rgba(255,230,190,.08)';
-      g.fillRect(x + 1, 0, 1, c.height);
-    }
     return new THREE.CanvasTexture(c);
   }
   const rowShade = new THREE.MeshBasicMaterial({map: rowShadeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1});
