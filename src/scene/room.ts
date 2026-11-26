@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import {rng} from '../util';
+import {buildDecor} from './decor';
 
 export interface RoomLayout {
   pitch: number;
@@ -55,6 +57,30 @@ function rugTexture(): THREE.CanvasTexture {
   });
 }
 
+/** A dusk landscape for the framed picture: sky, a low sun and three ridges. */
+function paintingTexture(): THREE.CanvasTexture {
+  return gradientTexture(160, 200, (g) => {
+    const sky = g.createLinearGradient(0, 0, 0, 200);
+    sky.addColorStop(0, '#4a5d86');
+    sky.addColorStop(0.55, '#d99a68');
+    sky.addColorStop(1, '#f0c78c');
+    g.fillStyle = sky;
+    g.fillRect(0, 0, 160, 200);
+    g.fillStyle = '#f6e2b0';
+    g.beginPath();
+    g.arc(110, 100, 16, 0, Math.PI * 2);
+    g.fill();
+    [['#6a5a6e', 118], ['#46506a', 136], ['#2b3550', 158]].forEach(([c, y], i) => {
+      g.fillStyle = c as string;
+      g.beginPath();
+      g.moveTo(0, 200);
+      for (let x = 0; x <= 160; x += 8) g.lineTo(x, (y as number) + Math.sin(x * 0.07 + i * 2) * (9 - i * 2));
+      g.lineTo(160, 200);
+      g.fill();
+    });
+  });
+}
+
 /**
  * Floor and wall lamps behind the bookcases. There is no wall mesh: the page background chosen in
  * the style dialog is the wall, so the room never hides it. The camera never leaves the wall's
@@ -103,10 +129,14 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
   const darkWood = new THREE.MeshStandardMaterial({color: 0x2b1a10, roughness: 0.6});
   const tableWood = new THREE.MeshStandardMaterial({color: 0x4f2f1a, roughness: 0.5});
   const brass = new THREE.MeshStandardMaterial({color: 0xc19a4b, roughness: 0.35, metalness: 0.7});
-  const shadeMat = new THREE.MeshStandardMaterial({color: 0xe8c48a, emissive: 0xffb55a, emissiveIntensity: 1.4, roughness: 0.9, side: THREE.DoubleSide});
+  const shadeMat = new THREE.MeshStandardMaterial({color: 0xd9b074, emissive: 0xffa94a, emissiveIntensity: 0.95, roughness: 0.9, side: THREE.DoubleSide});
   const rugMat = new THREE.MeshStandardMaterial({map: rugTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
   const stackMats = [0x3b4a6b, 0x7a3b2e, 0x4f6b48].map((color) => new THREE.MeshStandardMaterial({color, roughness: 0.7}));
-  const lampLight =new THREE.PointLight(0xffc27a, 0, 16, 2);
+  const decorMat = new THREE.MeshStandardMaterial({vertexColors: true, roughness: 0.6});
+  const gilt = new THREE.MeshStandardMaterial({color: 0x8a6a2f, roughness: 0.4, metalness: 0.5});
+  const paintingMat = new THREE.MeshStandardMaterial({map: paintingTexture(), roughness: 0.9});
+  const mote = new THREE.PointsMaterial({map: glow, size: 0.24, color: 0xffe2b0, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false});
+  const lampLight = new THREE.PointLight(0xffc27a, 0, 16, 2);
   props.add(lampLight);
   // A table lamp lights the shelf beside it, not the whole wall.
   const LAMP_INTENSITY = 26;
@@ -183,7 +213,32 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
     props.add(table);
     const shadeY = tableWithLamp(table);
     lampLight.position.set(table.position.x + 0.35, floorY + shadeY, table.position.z - 0.1);
+    lampLight.updateMatrix();
     lampLight.intensity = LAMP_INTENSITY;
+    const chairX = -(pitch / 2 + 4.3);
+    // A big pot by the armchair, and a floor lamp between the chair and the bookcase.
+    const pot = part(buildDecor('plant'), decorMat, chairX - 2.7, floorY, 0.2, props);
+    pot.scale.setScalar(2.3);
+    const lamp = new THREE.Group();
+    lamp.position.set(-(pitch / 2 + 1.7), floorY, -0.1);
+    part(new THREE.CylinderGeometry(0.5, 0.55, 0.12, 20), brass, 0, 0.06, 0, lamp);
+    part(new THREE.CylinderGeometry(0.05, 0.05, 5.4, 8), brass, 0, 2.8, 0, lamp);
+    part(new THREE.CylinderGeometry(0.55, 1.0, 1.1, 24, 1, true), shadeMat, 0, 5.7, 0, lamp);
+    const lampHalo = new THREE.Sprite(glowMat);
+    lampHalo.scale.set(5.5, 5.5, 1);
+    lampHalo.position.set(0, 5.7, 0);
+    lamp.add(lampHalo);
+    props.add(lamp);
+    // A framed picture leaning on the floor beside the table.
+    const picture = new THREE.Group();
+    picture.position.set(table.position.x + 2.9, floorY + 1.45, -0.2);
+    picture.rotation.x = -0.1;
+    part(new THREE.BoxGeometry(2.3, 2.9, 0.14), gilt, 0, 0, 0, picture);
+    part(new THREE.PlaneGeometry(1.9, 2.5), paintingMat, 0, 0, 0.075, picture);
+    props.add(picture);
+    // Nothing here moves, so the transforms are fixed once.
+    props.updateMatrixWorld(true);
+    props.traverse((o) => (o.matrixAutoUpdate = false));
   }
 
   return {
@@ -212,6 +267,18 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
         pool.position.set(x, y - 1.6, z - 0.1);
         group.add(pool, halo, bulb);
       }
+      // Still motes of dust in the lamplight: one draw call, and fixed so an idle shelf stays idle.
+      const pick = rng(11);
+      const n = 36 * count;
+      const xyz = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        xyz[i * 3] = -pitch / 2 - 4 + pick() * (span + pitch + 8);
+        xyz[i * 3 + 1] = floorY + 1 + pick() * ((tops[0] ?? 10) - floorY);
+        xyz[i * 3 + 2] = 1 + pick() * 4;
+      }
+      const dust = new THREE.BufferGeometry();
+      dust.setAttribute('position', new THREE.BufferAttribute(xyz, 3));
+      group.add(new THREE.Points(dust, mote));
       buildProps();
     },
     setProps(on) {

@@ -6,9 +6,10 @@ import {state} from '../state';
 import {matches} from '../search';
 import {clamp, hash, hsl, rng} from '../util';
 import {LIGHTS, WOODS, type WoodPreset} from '../presets';
-import {SERIF, drawCover, pagesCanvas, paletteOf, sat, spineCanvas, spineLook} from '../textures/draw';
+import {SERIF, bookKind, drawCover, pagesCanvas, paletteOf, sat, spineCanvas, spineLook, type BookKind} from '../textures/draw';
 import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
+import {DECOR_KINDS, DECOR_WIDTH, buildDecor} from './decor';
 import {tintFor} from './tint';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
@@ -81,8 +82,15 @@ const FASCIA_H = 0.6;
 const CORNICE_H = 0.14;
 /** World units covered by one repeat of the wood grain texture. */
 const WOOD_TILE = 2.5;
-/** Corner radius of a book. */
-const BOOK_RADIUS = 0.02;
+/** How a binding looks and feels: corner radius, and how glossy the spine is. Paperbacks are soft and matt, jackets glossy. */
+const BINDING: Record<BookKind, {radius: number; gloss: number}> = {
+  hardcover: {radius: 0.016, gloss: 0.55},
+  paperback: {radius: 0.034, gloss: 0.85},
+  jacket: {radius: 0.02, gloss: 0.3},
+};
+/** Objects standing on the free end of a shelf: at most this many per bookcase. */
+const MAX_DECOR = 3;
+const RIBBONS = [0xa3322e, 0xc9a24a, 0x2f6b4a, 0x2d4a82];
 /** A book may stand this far out of line with its row, so spines are not a ruled edge. */
 const MAX_PULL = 0.09;
 const MAX_LEAN = 0.14;
@@ -161,6 +169,18 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       for (let x = 0; x <= 512; x += 64) g.lineTo(x, y + Math.sin(x * 0.02 + i) * 3);
       g.stroke();
     }
+    // A few knots, where the grain swirls round a darker core.
+    for (let i = 0; i < 5; i++) {
+      const kx = rand() * 512;
+      const ky = rand() * 512;
+      for (let ring = 5; ring > 0; ring--) {
+        g.strokeStyle = `rgba(${w.dark},${0.08 + (5 - ring) * 0.035})`;
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.ellipse(kx, ky, ring * 4.5, ring * 2.4, 0, 0, Math.PI * 2);
+        g.stroke();
+      }
+    }
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
@@ -168,8 +188,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     return t;
   }
   let wood = woodTexture(WOODS.walnut);
-  const woodMat = new THREE.MeshStandardMaterial({map: wood, roughness: 0.72, metalness: 0});
+  const woodMat = new THREE.MeshStandardMaterial({map: wood, bumpMap: wood, bumpScale: 0.8, roughness: 0.72, metalness: 0});
   const backMat = new THREE.MeshStandardMaterial({map: wood, color: 0x7a6050, roughness: 0.9});
+  const ribbonMats = RIBBONS.map((color) => new THREE.MeshStandardMaterial({color, roughness: 0.8, side: THREE.DoubleSide}));
+  const decorMat = new THREE.MeshStandardMaterial({vertexColors: true, roughness: 0.6});
   const pagesTex = new THREE.CanvasTexture(pagesCanvas());
   pagesTex.colorSpace = THREE.SRGBColorSpace;
   pagesTex.anisotropy = maxAniso;
@@ -202,6 +224,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const old = wood;
     wood = woodTexture(WOODS[woodId]);
     woodMat.map = wood;
+    woodMat.bumpMap = wood;
     backMat.map = wood;
     old.dispose();
     const L = LIGHTS[lightId];
@@ -349,7 +372,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       grp.children.forEach((m) => {
         const mesh = m as THREE.Mesh;
         mesh.geometry.dispose();
-        (mesh.userData.mats as THREE.Material[]).forEach((x) => x.dispose());
+        ((mesh.userData.mats ?? []) as THREE.Material[]).forEach((x) => x.dispose());
       });
       bookRoot.remove(grp);
     }
@@ -560,6 +583,20 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         const shelf = baseY + BOARD + (rows - 1 - bk.row) * ROW_H;
         frame.add(box(0.05, 1.1, 0.8, woodMat, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
       }
+      // A plant, globe, candle or clock where a shelf has room beside its last book. Seeded by the case, so they stay put.
+      const choose = rng(hash('decor' + c.index));
+      let placed = 0;
+      c.rows.forEach((row, k) => {
+        if (choose() > 0.55 || placed >= MAX_DECOR) return;
+        const last = row[row.length - 1];
+        if (innerW - (last ? last.x + last.b.w : 0) < DECOR_WIDTH + 0.8) return;
+        const piece = new THREE.Mesh(buildDecor(DECOR_KINDS[Math.floor(choose() * DECOR_KINDS.length)] ?? 'plant'), decorMat);
+        piece.position.set(ox + innerW / 2 - 0.6, baseY + BOARD + (rows - 1 - k) * ROW_H, -DEPTH / 2 + 0.65);
+        piece.rotation.y = (choose() - 0.5) * 0.5;
+        piece.castShadow = piece.receiveShadow = true;
+        frame.add(piece);
+        placed++;
+      });
       const top = baseY + Hc + FASCIA_H + CORNICE_H;
       const bottom = baseY - PLINTH_H;
       tops.push(top);
@@ -571,7 +608,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const ox = caseX(c.index, pitch);
       const floor = baseY + BOARD + i * ROW_H;
       row.forEach(({b, x: bx}, at) => {
-        const pages = () => new THREE.MeshStandardMaterial({map: pagesTex, color: 0xffffff, roughness: 0.95});
+        // Older books have yellowed pages; the tint multiplies the paper texture.
+        const paper = new THREE.Color(0xffffff).lerp(new THREE.Color(0xe3cf9c), rng(hash(b.id + 'age'))() * 0.9);
+        const pages = () => new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
+        const binding = BINDING[bookKind(b)];
         const colors = faceColors(b);
         // Seeded by id, so a book stands the same way after every rebuild.
         const r = rng(hash(b.id));
@@ -584,14 +624,22 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           new THREE.MeshStandardMaterial({color: colors[1], roughness: 0.7}),
           pages(),
           pages(),
-          new THREE.MeshStandardMaterial({color: colors[2], roughness: 0.55}),
+          new THREE.MeshStandardMaterial({color: colors[2], roughness: binding.gloss}),
           pages(),
         ];
-        const mesh = new THREE.Mesh(new RoundedBoxGeometry(b.w, b.h, b.d, 2, BOOK_RADIUS), mats);
+        const mesh = new THREE.Mesh(new RoundedBoxGeometry(b.w, b.h, b.d, 2, binding.radius), mats);
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.userData = {id: b.id, mats};
         const grp = new THREE.Group();
         grp.add(mesh);
+        if (hash(b.id + 'ribbon') % 6 === 0) {
+          // A bookmark ribbon showing above the page block, near the spine.
+          const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.34), ribbonMats[hash(b.id + 'rc') % ribbonMats.length]);
+          ribbon.position.set(0, b.h / 2 + 0.12, b.d * 0.3);
+          ribbon.rotation.x = -0.12;
+          ribbon.userData.mats = [];
+          grp.add(ribbon);
+        }
         // A leaning book keeps its low corner on the board and its high corner clear of the book it rests against.
         const home = new THREE.Vector3(
           ox - innerW / 2 + 0.06 + bx + b.w / 2 + (b.h / 2) * Math.sin(lean),
