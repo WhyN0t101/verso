@@ -394,7 +394,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       if (!texCache.has(k) || entries.get(b.id) !== e) return;
       const t = new THREE.Texture(img);
       t.colorSpace = THREE.SRGBColorSpace;
-      t.anisotropy = maxAniso;
+      // The cover is shown near its own size, so mipmaps would only cost a generation pass on upload.
+      t.generateMipmaps = false;
+      t.minFilter = THREE.LinearFilter;
       t.needsUpdate = true;
       const previous = texCache.get(k);
       texCache.set(k, t);
@@ -403,7 +405,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     void loadCover(b.cover, {signal: ctl.signal})
       .then((img) => {
         if (img) show(img);
-        return loadCover(largeCover(b.cover as string), {signal: ctl.signal});
+        // The large cover waits for the medium fade to end, so two texture uploads never land in one frame.
+        return new Promise<void>((done) => setTimeout(done, FADE_S * 1000 + 100)).then(() => loadCover(largeCover(b.cover as string), {signal: ctl.signal}));
       })
       .then((img) => {
         if (img) show(img);

@@ -52,7 +52,11 @@ async function fetchImage(url: string, signal: AbortSignal): Promise<Outcome> {
   try {
     const img = await new Promise<HTMLImageElement | null>((resolve) => {
       const el = new Image();
-      el.onload = () => resolve(el.naturalWidth >= MIN_SIDE && el.naturalHeight >= MIN_SIDE ? el : null);
+      el.onload = () => {
+        // Decoding here, off the main thread, keeps the first draw of the cover from stalling a frame.
+        const decoded = typeof el.decode === 'function' ? el.decode().catch(() => undefined) : Promise.resolve();
+        void decoded.then(() => resolve(el.naturalWidth >= MIN_SIDE && el.naturalHeight >= MIN_SIDE ? el : null));
+      };
       el.onerror = () => resolve(null);
       el.src = objectUrl;
     });
