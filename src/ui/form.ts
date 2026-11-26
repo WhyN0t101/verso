@@ -213,10 +213,18 @@ export function initForm(onSave: (draft: BookDraft, editingId: string | null) =>
   });
 }
 
+let submitting = false;
+
 async function submit(): Promise<void> {
   const title = f('fTitle').value.trim();
-  if (!title) return;
-  await coverReady;
+  // The cover colour can take seconds; a second press meanwhile must not add the book twice.
+  if (!title || submitting) return;
+  submitting = true;
+  try {
+    await coverReady;
+  } finally {
+    submitting = false;
+  }
   const year = Number.parseInt(f('fYear').value, 10);
   const draft: BookDraft = {
     title,
