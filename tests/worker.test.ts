@@ -93,7 +93,7 @@ describe('/api/search work mode', () => {
     expect((await call('/api/search?work=../etc')).status).toBe(400);
     expect((await call('/api/search?q=x')).status).toBe(400);
     expect((await call(`/api/search?q=${'a'.repeat(121)}`)).status).toBe(400);
-    expect((await call(`/api/search?work=OL1W&junk=${'a'.repeat(500)}`)).status).toBe(414);
+    expect((await call(`/api/search?work=OL1W&junk=${'a'.repeat(2500)}`)).status).toBe(414);
   });
 
   it('serves repeat queries from the Cache API with CDN headers', async () => {
@@ -209,6 +209,22 @@ describe('/api/cover caching', () => {
     expect(down.headers.get('Cache-Control')).toBe('no-store');
     expect((await call('/api/cover?id=abc')).headers.get('Cache-Control')).toBe('no-store');
     expect(cache.store.size).toBe(0);
+  });
+
+  it('does not cache a rate limit or block from Open Library as a missing cover', async () => {
+    for (const status of [429, 403]) {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response('<html>slow down</html>', {status, headers: {'Content-Type': 'text/html'}})));
+      const r = await call(`/api/cover?id=${status}`);
+      expect(r.status).toBe(502);
+      expect(r.headers.get('Cache-Control')).toBe('no-store');
+    }
+    expect(cache.store.size).toBe(0);
+  });
+
+  it('accepts a long non-Latin title in /api/covers', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({docs: []}));
+    const title = encodeURIComponent('吾'.repeat(120));
+    expect((await call(`/api/covers?title=${title}&author=x`)).status).toBe(200);
   });
 });
 

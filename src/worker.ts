@@ -25,7 +25,8 @@ const COVER_SIZES = new Set(['S', 'M', 'L']);
 const CDN = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
 // A work with no summary anywhere is retried sooner, in case Google was only briefly unavailable.
 const CDN_SHORT = 'public, max-age=300, s-maxage=3600';
-const MAX_QUERY_STRING = 400;
+// Counts the encoded string: a 150-character CJK title is 9 characters per letter. The per-field limits do the real work.
+const MAX_QUERY_STRING = 2400;
 // A cover id never changes its image, so a successful response is cacheable for good.
 const COVER_CC = 'public, max-age=31536000, immutable';
 // A missing cover may appear later; keep the miss short so the edge is not asked again on every view.
@@ -330,9 +331,10 @@ async function handleCover(url: URL, ctx: Ctx): Promise<Response> {
       // default=false makes Open Library answer 404 instead of a blank placeholder, so callers can fall back.
       const r = await fetchUpstream(`https://covers.openlibrary.org/b/id/${id}-${size}.jpg?default=false`, {});
       const type = r.headers.get('content-type') ?? '';
-      if (r.status >= 500) throw new Error(`upstream ${r.status}`);
-      if (r.status === 404 || !type.startsWith('image/')) return json({error: 'no cover'}, 404, COVER_MISS_CC);
+      if (r.status === 404) return json({error: 'no cover'}, 404, COVER_MISS_CC);
+      // A 429 or 403 says nothing about the cover, so it must not be cached as a miss.
       if (!r.ok) throw new Error(`upstream ${r.status}`);
+      if (!type.startsWith('image/')) return json({error: 'no cover'}, 404, COVER_MISS_CC);
       const buf = await r.arrayBuffer();
       if (buf.byteLength > MAX_COVER_BYTES) return json({error: 'cover too large'}, 502);
       return new Response(buf, {status: 200, headers: {'Content-Type': type, 'Cache-Control': COVER_CC}});
