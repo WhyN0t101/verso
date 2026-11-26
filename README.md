@@ -44,7 +44,7 @@ For UI work with hot reload, run `npm run dev`: it starts Vite and the Worker to
 - `GET /api/search?work=<OL id>&title=&author=` returns `{summary, genre, source}`.
 - `GET /api/cover?id=<numeric Open Library cover id>&size=S|M|L` streams the image from our origin.
 
-Responses go through the Workers Cache API and carry `Cache-Control` headers. The Cache API is not active on `*.workers.dev`, so serve the Worker from a custom domain to get edge caching; without it every uncached call reaches Open Library. Subjects are mapped to a fixed list in `shared/genres.ts`.
+Responses go through the Workers Cache API and carry `Cache-Control` headers. Subjects are mapped to a fixed list in `shared/genres.ts`.
 
 ## Structure
 
