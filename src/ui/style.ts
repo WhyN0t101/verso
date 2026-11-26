@@ -54,6 +54,8 @@ function renderGroups(): void {
   for (const b of BACKGROUNDS) option(bg, b.id, b.label, b.css, s.background.kind === 'preset' && s.background.id === b.id);
   if (s.background.kind === 'image') option(bg, 'image', 'Your image', `url("${s.background.data}") center / cover`, true);
   $('stRemoveImg').classList.toggle('hidden', s.background.kind !== 'image');
+  $('stProps').classList.toggle('on', !!s.props);
+  $('stProps').setAttribute('aria-pressed', String(!!s.props));
 }
 
 /** Applies the named Study look to wood, light and background. Grouping and everything else stay as they are. */
@@ -84,6 +86,12 @@ export function initStyle(onSettingsChange: () => void): void {
     // Picking the "Your image" swatch again is a no-op; presets replace the image until a new upload.
     if (id && id !== 'image') change((s) => (s.background = {kind: 'preset', id}));
   });
+  $('stProps').addEventListener('click', () =>
+    change((s) => {
+      if (s.props) delete s.props;
+      else s.props = true;
+    }),
+  );
   $('stRemoveImg').addEventListener('click', () => change((s) => (s.background = {...STUDY.background})));
   $('stStudy').addEventListener('click', () => change(applyStudy));
   $<HTMLInputElement>('stUpload').addEventListener('change', async (ev) => {

@@ -50,4 +50,6 @@ export interface Settings {
   background: Background;
   /** One labelled bookcase per genre instead of insertion order. Absent in older saves, meaning off. */
   groupByGenre?: boolean;
+  /** An armchair and a table with an old lamp beside the bookcases. Absent means off. */
+  props?: boolean;
 }

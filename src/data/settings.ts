@@ -26,5 +26,6 @@ export function sanitizeSettings(x: unknown): Settings {
     light: LIGHT_IDS.includes(o.light as string) ? (o.light as Settings['light']) : STUDY.light,
     background,
     ...(o.groupByGenre === true ? {groupByGenre: true} : {}),
+    ...(o.props === true ? {props: true} : {}),
   };
 }

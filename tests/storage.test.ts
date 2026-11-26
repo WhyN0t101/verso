@@ -57,3 +57,11 @@ describe('background image in settings', () => {
     expect(bg('data:image/svg+xml;base64,AAAA')).toEqual({kind: 'preset', id: 'study'});
   });
 });
+
+describe('room props setting', () => {
+  it('is kept only when exactly true', () => {
+    expect(sanitizeSettings({props: true}).props).toBe(true);
+    expect(sanitizeSettings({props: 'yes'})).not.toHaveProperty('props');
+    expect(sanitizeSettings(undefined)).not.toHaveProperty('props');
+  });
+});

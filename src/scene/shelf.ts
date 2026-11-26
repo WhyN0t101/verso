@@ -1,10 +1,12 @@
 import * as THREE from 'three';
+import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type {Book} from '../types';
 import {state} from '../state';
 import {matches} from '../search';
-import {clamp, hsl, rng} from '../util';
+import {clamp, hash, hsl, rng} from '../util';
 import {LIGHTS, WOODS, type WoodPreset} from '../presets';
-import {SERIF, drawCover, paletteOf, sat, spineCanvas, spineLook} from '../textures/draw';
+import {SERIF, drawCover, pagesCanvas, paletteOf, sat, spineCanvas, spineLook} from '../textures/draw';
 import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
 import {tintFor} from './tint';
@@ -61,6 +63,8 @@ interface Entry {
   coverPending?: boolean;
   caseIndex: number;
   picked: boolean;
+  /** Resting tilt in radians; a book at the end of a half-empty row leans on its neighbour. */
+  lean: number;
   /** Strength of the warm glow now on the book's faces. */
   glow: number;
   /** Result of the search and status filter, refreshed only when they change. */
@@ -73,6 +77,15 @@ const SIDE = 0.22;
 const DEPTH = 1.7;
 const WIDTHS = [3.6, 4.2, 4.8];
 const FASCIA_H = 0.6;
+/** Crown moulding above the fascia: two stepped slabs. */
+const CORNICE_H = 0.14;
+/** World units covered by one repeat of the wood grain texture. */
+const WOOD_TILE = 2.5;
+/** Corner radius of a book. */
+const BOOK_RADIUS = 0.02;
+/** A book may stand this far out of line with its row, so spines are not a ruled edge. */
+const MAX_PULL = 0.09;
+const MAX_LEAN = 0.14;
 const PLINTH_H = 0.3;
 /** Empty space around the framed bookcase: room for the lamp above and the floor below. */
 const VIEW_MARGIN = 0.6;
@@ -124,6 +137,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   const fillL = new THREE.DirectionalLight(0x9fb4ff, 0.16 * LIGHT_UNIT);
   fillL.position.set(7, 3, 8);
   scene.add(hemi, key, key.target, fillL);
+  // A faint image-based light gives covers and wood a soft sheen the three lamps alone cannot.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.3;
+  pmrem.dispose();
 
   function woodTexture(w: WoodPreset): THREE.CanvasTexture {
     const c = document.createElement('canvas');
@@ -152,6 +170,31 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let wood = woodTexture(WOODS.walnut);
   const woodMat = new THREE.MeshStandardMaterial({map: wood, roughness: 0.72, metalness: 0});
   const backMat = new THREE.MeshStandardMaterial({map: wood, color: 0x7a6050, roughness: 0.9});
+  const pagesTex = new THREE.CanvasTexture(pagesCanvas());
+  pagesTex.colorSpace = THREE.SRGBColorSpace;
+  pagesTex.anisotropy = maxAniso;
+
+  /** Soft shadow for one row of the back panel: dark under the board above, at the sides and at the foot. */
+  function rowShadeTexture(): THREE.CanvasTexture {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 128;
+    const g = c.getContext('2d');
+    if (!g) throw new Error('2D canvas unavailable');
+    const band = (x0: number, y0: number, x1: number, y1: number, alpha: number): void => {
+      const grd = g.createLinearGradient(x0, y0, x1, y1);
+      grd.addColorStop(0, `rgba(0,0,0,${alpha})`);
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, c.width, c.height);
+    };
+    band(0, 0, 0, c.height * 0.45, 0.6);
+    band(0, c.height, 0, c.height * 0.8, 0.3);
+    band(0, 0, c.width * 0.14, 0, 0.4);
+    band(c.width, 0, c.width * 0.86, 0, 0.4);
+    return new THREE.CanvasTexture(c);
+  }
+  const rowShade = new THREE.MeshBasicMaterial({map: rowShadeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1});
 
   function applySettings(): void {
     force = true;
@@ -169,10 +212,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     key.intensity = L.key * LIGHT_UNIT;
     fillL.color.setHex(L.fillColor);
     fillL.intensity = L.fill * LIGHT_UNIT;
+    room.setProps(!!state.settings.props);
   }
+  const room = createRoom(scene);
   applySettings();
 
-  const room = createRoom(scene);
   const frame = new THREE.Group();
   const bookRoot = new THREE.Group();
   scene.add(frame, bookRoot);
@@ -231,8 +275,26 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     }
   }
 
-  function box(w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  /** Maps the wood texture at a fixed size per world unit, so grain is not stretched on long or tall boards. */
+  function woodUV(g: THREE.BoxGeometry, w: number, h: number, d: number, upright: boolean): void {
+    const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+    // BoxGeometry faces in order: +x, -x, +y, -y, +z, -z, four vertices each.
+    const sizes: [number, number][] = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    sizes.forEach(([a, b], face) => {
+      // Uprights have their grain along the height; the texture's lines run along u, so u and v swap on their sides.
+      const swap = upright && face !== 2 && face !== 3;
+      for (let i = face * 4; i < face * 4 + 4; i++) {
+        const u = (uv.getX(i) * a) / WOOD_TILE;
+        const v = (uv.getY(i) * b) / WOOD_TILE;
+        if (swap) uv.setXY(i, v, u);
+        else uv.setXY(i, u, v);
+      }
+    });
+  }
+  function box(w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, upright = false): THREE.Mesh {
+    const g = new THREE.BoxGeometry(w, h, d);
+    woodUV(g, w, h, d, upright);
+    const m = new THREE.Mesh(g, mat);
     m.position.set(x, y, z);
     m.castShadow = m.receiveShadow = true;
     return m;
@@ -475,11 +537,19 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const Hc = rows * ROW_H + BOARD;
       const yc = baseY + Hc / 2;
       const ox = caseX(c.index, pitch);
-      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox - (innerW / 2 + SIDE / 2), yc, 0));
-      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox + innerW / 2 + SIDE / 2, yc, 0));
+      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox - (innerW / 2 + SIDE / 2), yc, 0, true));
+      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox + innerW / 2 + SIDE / 2, yc, 0, true));
       frame.add(box(Wtot, Hc, 0.08, backMat, ox, yc, -DEPTH / 2 + 0.04));
       for (let i = 0; i <= rows; i++) frame.add(box(innerW, BOARD, DEPTH, woodMat, ox, baseY + BOARD / 2 + i * ROW_H, 0));
+      for (let i = 0; i < rows; i++) {
+        const shade = new THREE.Mesh(new THREE.PlaneGeometry(innerW, ROW_H - BOARD), rowShade);
+        shade.position.set(ox, baseY + BOARD + (i + 0.5) * ROW_H - BOARD / 2, -DEPTH / 2 + 0.085);
+        frame.add(shade);
+      }
       frame.add(box(Wtot + 0.24, FASCIA_H, DEPTH + 0.12, woodMat, ox, baseY + Hc + FASCIA_H / 2, 0.03));
+      const crown = baseY + Hc + FASCIA_H;
+      frame.add(box(Wtot + 0.3, CORNICE_H * 0.45, DEPTH + 0.2, woodMat, ox, crown + CORNICE_H * 0.225, 0.05));
+      frame.add(box(Wtot + 0.46, CORNICE_H * 0.55, DEPTH + 0.3, woodMat, ox, crown + CORNICE_H * 0.725, 0.08));
       frame.add(box(Wtot + 0.12, PLINTH_H, DEPTH + 0.06, woodMat, ox, baseY - PLINTH_H / 2, 0.02));
       const sign = fasciaText(c.sections);
       if (sign) frame.add(fasciaPlate(sign, ox, baseY + Hc + FASCIA_H / 2));
@@ -487,7 +557,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         const shelf = baseY + BOARD + (rows - 1 - bk.row) * ROW_H;
         frame.add(box(0.05, 1.1, 0.8, woodMat, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
       }
-      const top = baseY + Hc + FASCIA_H;
+      const top = baseY + Hc + FASCIA_H + CORNICE_H;
       const bottom = baseY - PLINTH_H;
       tops.push(top);
       caseView.push({cy: (top + bottom) / 2, h: top - bottom + VIEW_MARGIN});
@@ -497,9 +567,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const i = c.rows.length - 1 - k;
       const ox = caseX(c.index, pitch);
       const floor = baseY + BOARD + i * ROW_H;
-      for (const {b, x: bx} of row) {
-        const pages = () => new THREE.MeshStandardMaterial({color: 0xe9dfc8, roughness: 0.95});
+      row.forEach(({b, x: bx}, at) => {
+        const pages = () => new THREE.MeshStandardMaterial({map: pagesTex, color: 0xffffff, roughness: 0.95});
         const colors = faceColors(b);
+        // Seeded by id, so a book stands the same way after every rebuild.
+        const r = rng(hash(b.id));
+        const pull = r() * MAX_PULL;
+        const angle = 0.06 + r() * (MAX_LEAN - 0.06);
+        const lean = at > 0 && at === row.length - 1 && r() < 0.75 && innerW - 0.1 - (bx + b.w) > 2 * (b.h / 2) * Math.sin(angle) + 0.06 ? angle : 0;
         // Order follows BoxGeometry faces: +x cover, -x back board, +y, -y, +z spine, -z.
         const mats = [
           new THREE.MeshStandardMaterial({color: colors[0], roughness: 0.6}),
@@ -509,13 +584,19 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           new THREE.MeshStandardMaterial({color: colors[2], roughness: 0.55}),
           pages(),
         ];
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mats);
+        const mesh = new THREE.Mesh(new RoundedBoxGeometry(b.w, b.h, b.d, 2, BOOK_RADIUS), mats);
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.userData = {id: b.id, mats};
         const grp = new THREE.Group();
         grp.add(mesh);
-        const home = new THREE.Vector3(ox - innerW / 2 + 0.06 + bx + b.w / 2, floor + b.h / 2, -DEPTH / 2 + 0.1 + b.d / 2);
+        // A leaning book keeps its low corner on the board and its high corner clear of the book it rests against.
+        const home = new THREE.Vector3(
+          ox - innerW / 2 + 0.06 + bx + b.w / 2 + (b.h / 2) * Math.sin(lean),
+          floor + (b.h / 2) * Math.cos(lean) + (b.w / 2) * Math.sin(lean),
+          -DEPTH / 2 + 0.1 + pull + b.d / 2,
+        );
         grp.position.copy(home);
+        grp.rotation.z = lean;
         const pv = prev.get(b.id);
         if (pv) {
           grp.position.copy(pv.p);
@@ -523,9 +604,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           grp.scale.setScalar(pv.s);
         }
         bookRoot.add(grp);
-        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, picked: false, glow: 0, match: true});
+        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, picked: false, lean, glow: 0, match: true});
         pickables.push(mesh);
-      }
+      });
     }));
     room.layout({pitch, count: wall.cases.length, floorY: baseY - PLINTH_H - 0.01, tops, depth: DEPTH});
     viewKey = '';
@@ -815,15 +896,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         rxy = far ? 9 : 10;
         rz = far ? 3.5 : 10;
       }
-      const ox = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.scale.x;
+      const ox = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.rotation.z + e.grp.scale.x;
       p.x += (tx - p.x) * ease(dt, rxy);
       p.y += (ty - p.y) * ease(dt, rxy);
       p.z += (tz - p.z) * ease(dt, rz);
       e.grp.rotation.y += (rY - e.grp.rotation.y) * ease(dt, 6);
       e.grp.rotation.x += (rX - e.grp.rotation.x) * ease(dt, 6);
+      e.grp.rotation.z += ((isSel ? 0 : e.lean) - e.grp.rotation.z) * ease(dt, 6);
       const s = e.grp.scale.x;
       e.grp.scale.setScalar(s + (sc - s) * ease(dt, 6));
-      const nx = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.scale.x;
+      const nx = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.rotation.z + e.grp.scale.x;
       if (Math.abs(nx - ox) > 1e-5) {
         moved++;
         shadowDirty = true;
