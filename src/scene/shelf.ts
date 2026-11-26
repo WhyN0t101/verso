@@ -90,7 +90,6 @@ const BINDING: Record<BookKind, {radius: number; gloss: number}> = {
 };
 /** Objects standing on the free end of a shelf: at most this many per bookcase. */
 const MAX_DECOR = 3;
-const RIBBONS = [0xa3322e, 0xc9a24a, 0x2f6b4a, 0x2d4a82];
 /** A book may stand this far out of line with its row, so spines are not a ruled edge. */
 const MAX_PULL = 0.09;
 const MAX_LEAN = 0.14;
@@ -110,6 +109,26 @@ const FACE_GLOW = 0.72;
 
 const ease = (dt: number, r: number) => 1 - Math.exp(-dt * r);
 const isMobile = () => innerWidth <= 760;
+
+/** Average colour of an image, read from a tiny copy of it. */
+function meanColor(img: CanvasImageSource): THREE.Color {
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const g = c.getContext('2d', {willReadFrequently: true});
+  if (!g) throw new Error('2D canvas unavailable');
+  g.drawImage(img, 0, 0, 8, 8);
+  const px = g.getImageData(0, 0, 8, 8).data;
+  let r = 0;
+  let gr = 0;
+  let b = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    r += px[i] ?? 0;
+    gr += px[i + 1] ?? 0;
+    b += px[i + 2] ?? 0;
+  }
+  const n = (px.length / 4) * 255;
+  return new THREE.Color().setRGB(r / n, gr / n, b / n, THREE.SRGBColorSpace);
+}
 
 export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf | null {
   let renderer: THREE.WebGLRenderer;
@@ -190,7 +209,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let wood = woodTexture(WOODS.walnut);
   const woodMat = new THREE.MeshStandardMaterial({map: wood, bumpMap: wood, bumpScale: 0.8, roughness: 0.72, metalness: 0});
   const backMat = new THREE.MeshStandardMaterial({map: wood, color: 0x7a6050, roughness: 0.9});
-  const ribbonMats = RIBBONS.map((color) => new THREE.MeshStandardMaterial({color, roughness: 0.8, side: THREE.DoubleSide}));
   const decorMat = new THREE.MeshStandardMaterial({vertexColors: true, roughness: 0.6});
   const pagesTex = new THREE.CanvasTexture(pagesCanvas());
   pagesTex.colorSpace = THREE.SRGBColorSpace;
@@ -218,15 +236,44 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
   const rowShade = new THREE.MeshBasicMaterial({map: rowShadeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1});
 
+  /** Photographed wood grain (CC0, see public/textures/CREDITS.md). Until it loads the painted grain stands in. */
+  let photo: {map: THREE.Texture; normal: THREE.Texture; mean: THREE.Color} | null = null;
+  const textures = new THREE.TextureLoader();
+  void Promise.all([textures.loadAsync('/textures/wood_diff.jpg'), textures.loadAsync('/textures/wood_nor.jpg')])
+    .then(([map, normal]) => {
+      for (const t of [map, normal]) {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.anisotropy = maxAniso;
+      }
+      map.colorSpace = THREE.SRGBColorSpace;
+      photo = {map, normal, mean: meanColor(map.image as CanvasImageSource)};
+      woodMat.normalScale.set(0.7, 0.7);
+      applySettings();
+    })
+    .catch((err: unknown) => console.warn('wood photo unavailable', err));
+
   function applySettings(): void {
     force = true;
     const {wood: woodId, light: lightId} = state.settings;
-    const old = wood;
-    wood = woodTexture(WOODS[woodId]);
-    woodMat.map = wood;
-    woodMat.bumpMap = wood;
-    backMat.map = wood;
-    old.dispose();
+    if (photo) {
+      // The photographed grain is tinted so its average colour becomes the preset's wood colour.
+      const base = new THREE.Color(WOODS[woodId].base);
+      const tint = new THREE.Color(base.r / photo.mean.r, base.g / photo.mean.g, base.b / photo.mean.b);
+      woodMat.map = photo.map;
+      woodMat.normalMap = photo.normal;
+      woodMat.bumpMap = null;
+      woodMat.color.copy(tint);
+      backMat.map = photo.map;
+      backMat.color.copy(tint).multiplyScalar(0.5);
+    } else {
+      const old = wood;
+      wood = woodTexture(WOODS[woodId]);
+      woodMat.map = wood;
+      woodMat.bumpMap = wood;
+      backMat.map = wood;
+      old.dispose();
+    }
+    woodMat.needsUpdate = backMat.needsUpdate = true;
     const L = LIGHTS[lightId];
     hemi.color.setHex(L.hemiSky);
     hemi.groundColor.setHex(L.hemiGround);
@@ -372,7 +419,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       grp.children.forEach((m) => {
         const mesh = m as THREE.Mesh;
         mesh.geometry.dispose();
-        ((mesh.userData.mats ?? []) as THREE.Material[]).forEach((x) => x.dispose());
+        (mesh.userData.mats as THREE.Material[]).forEach((x) => x.dispose());
       });
       bookRoot.remove(grp);
     }
@@ -632,14 +679,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         mesh.userData = {id: b.id, mats};
         const grp = new THREE.Group();
         grp.add(mesh);
-        if (hash(b.id + 'ribbon') % 6 === 0) {
-          // A bookmark ribbon showing above the page block, near the spine.
-          const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.34), ribbonMats[hash(b.id + 'rc') % ribbonMats.length]);
-          ribbon.position.set(0, b.h / 2 + 0.12, b.d * 0.3);
-          ribbon.rotation.x = -0.12;
-          ribbon.userData.mats = [];
-          grp.add(ribbon);
-        }
         // A leaning book keeps its low corner on the board and its high corner clear of the book it rests against.
         const home = new THREE.Vector3(
           ox - innerW / 2 + 0.06 + bx + b.w / 2 + (b.h / 2) * Math.sin(lean),

@@ -1,5 +1,6 @@
 import './style.css';
 import {fontsReady} from './fonts';
+import {clothReady} from './textures/draw';
 import {state, persist, findBook} from './state';
 import {makeBook, updateBook} from './data/books';
 import {matches} from './search';
@@ -19,7 +20,8 @@ import {initStyle, openStyle, closeStyle, applyBackground, applyStudy} from './u
 import {STORAGE_KEY} from './data/storage';
 import {buildBackup,mergeBooks, parseBackup} from './data/backup';
 
-await fontsReady;
+// Books drawn before the cloth photo arrives stay plain, so it gets a moment, but never holds the page up.
+await Promise.all([fontsReady, Promise.race([clothReady, new Promise((r) => setTimeout(r, 1500))])]);
 
 // Dev only: `?books=150` swaps in generated books (memory only until something persists).
 if (import.meta.env.DEV) {

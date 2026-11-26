@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import {rng} from '../util';
 import {buildDecor} from './decor';
 
 export interface RoomLayout {
@@ -126,6 +125,29 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
 
   const leather = new THREE.MeshStandardMaterial({color: 0x6a341f, roughness: 0.55});
   const cushion = new THREE.MeshStandardMaterial({color: 0x7d4327, roughness: 0.6});
+  // Photographed leather (CC0, see public/textures/CREDITS.md), fetched the first time the props are shown.
+  let leatherRequested = false;
+  function loadLeather(): void {
+    if (leatherRequested) return;
+    leatherRequested = true;
+    const loader = new THREE.TextureLoader();
+    void Promise.all([loader.loadAsync('/textures/leather_diff.jpg'), loader.loadAsync('/textures/leather_nor.jpg')])
+      .then(([map, normal]) => {
+        for (const t of [map, normal]) {
+          t.wrapS = t.wrapT = THREE.RepeatWrapping;
+          t.repeat.set(2, 2);
+        }
+        map.colorSpace = THREE.SRGBColorSpace;
+        for (const [m, tint] of [[leather, 0xffffff], [cushion, 0xffe3d0]] as const) {
+          m.map = map;
+          m.normalMap = normal;
+          m.normalScale.set(0.8, 0.8);
+          m.color.setHex(tint);
+          m.needsUpdate = true;
+        }
+      })
+      .catch((err: unknown) => console.warn('leather photo unavailable', err));
+  }
   const darkWood = new THREE.MeshStandardMaterial({color: 0x2b1a10, roughness: 0.6});
   const tableWood = new THREE.MeshStandardMaterial({color: 0x4f2f1a, roughness: 0.5});
   const brass = new THREE.MeshStandardMaterial({color: 0xc19a4b, roughness: 0.35, metalness: 0.7});
@@ -135,7 +157,6 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
   const decorMat = new THREE.MeshStandardMaterial({vertexColors: true, roughness: 0.6});
   const gilt = new THREE.MeshStandardMaterial({color: 0x8a6a2f, roughness: 0.4, metalness: 0.5});
   const paintingMat = new THREE.MeshStandardMaterial({map: paintingTexture(), roughness: 0.9});
-  const mote = new THREE.PointsMaterial({map: glow, size: 0.24, color: 0xffe2b0, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false});
   const lampLight = new THREE.PointLight(0xffc27a, 0, 16, 2);
   props.add(lampLight);
   // A table lamp lights the shelf beside it, not the whole wall.
@@ -199,6 +220,7 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
   function buildProps(): void {
     clearProps();
     if (!propsOn || !layoutNow) return;
+    loadLeather();
     const {pitch, count, floorY} = layoutNow;
     const span = (count - 1) * pitch;
     const rug = part(new THREE.PlaneGeometry(8.2, 6.2), rugMat, 0, floorY + 0.02, 0, props);
@@ -267,18 +289,6 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
         pool.position.set(x, y - 1.6, z - 0.1);
         group.add(pool, halo, bulb);
       }
-      // Still motes of dust in the lamplight: one draw call, and fixed so an idle shelf stays idle.
-      const pick = rng(11);
-      const n = 36 * count;
-      const xyz = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) {
-        xyz[i * 3] = -pitch / 2 - 4 + pick() * (span + pitch + 8);
-        xyz[i * 3 + 1] = floorY + 1 + pick() * ((tops[0] ?? 10) - floorY);
-        xyz[i * 3 + 2] = 1 + pick() * 4;
-      }
-      const dust = new THREE.BufferGeometry();
-      dust.setAttribute('position', new THREE.BufferAttribute(xyz, 3));
-      group.add(new THREE.Points(dust, mote));
       buildProps();
     },
     setProps(on) {

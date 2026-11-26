@@ -86,6 +86,17 @@ export function spineLook(b: Book): {h: number; s: number} & SpineScheme {
   return {h: p.h, s: p.s, ...spineScheme(p.h, p.s, spineLightness(b))};
 }
 
+/** Photographed book cloth (CC0, see public/textures/CREDITS.md), laid faintly over cloth and paper spines. */
+const cloth = typeof Image === 'undefined' ? null : new Image();
+/** Resolves once the cloth photo has loaded or failed; spines drawn before that are plain. */
+export const clothReady: Promise<void> = cloth
+  ? new Promise((resolve) => {
+      cloth.onload = () => resolve();
+      cloth.onerror = () => resolve();
+      cloth.src = '/textures/cloth_diff.jpg';
+    })
+  : Promise.resolve();
+
 export type BookKind = 'hardcover' | 'paperback' | 'jacket';
 
 /** Stable per book, from its id: mostly hardcovers, some paperbacks, a few in a dust jacket. */
@@ -213,6 +224,17 @@ export function spineCanvas(b: Book): HTMLCanvasElement {
   g.fillStyle = grd;
   g.fillRect(0, 0, W, H);
   const kind = bookKind(b);
+  const weave = cloth?.complete && cloth.naturalWidth && kind !== 'jacket' ? g.createPattern(cloth, 'repeat') : null;
+  if (weave) {
+    g.save();
+    g.filter = 'grayscale(1)';
+    g.globalCompositeOperation = 'soft-light';
+    g.globalAlpha = 0.45;
+    g.scale(0.4, 0.4);
+    g.fillStyle = weave;
+    g.fillRect(0, 0, W / 0.4, H / 0.4);
+    g.restore();
+  }
   // Gold foil lettering on some hardcovers, where it reads as well as the ink would.
   const foil = kind === 'hardcover' && hash(b.id + 'foil') % 3 === 0 ? foilFor(look) : null;
   g.fillStyle = foil ?? look.inkCss;

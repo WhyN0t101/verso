@@ -120,18 +120,19 @@ label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;col
 }
 
 /* Section index: a rail beside the shelf on wide screens, a bar and sheet below it on narrow ones. */
-#sections{background:linear-gradient(90deg,rgba(16,27,30,.9) 82%,transparent);padding:6px 14px 6px 0;position:fixed;left:16px;top:84px;bottom:24px;width:188px;z-index:4;overflow-y:auto;scrollbar-width:thin}
+#sections{background:linear-gradient(180deg,rgba(46,31,20,.86),rgba(27,18,12,.86));backdrop-filter:blur(8px);border:1px solid rgba(201,162,74,.4);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,226,170,.08);padding:12px 8px 8px;position:fixed;left:16px;top:84px;max-height:calc(100vh - 108px);width:204px;z-index:4;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(201,162,74,.4) transparent}
+#sections::before{content:"Sections";display:block;font:600 11px var(--sans);letter-spacing:.16em;text-transform:uppercase;color:#c9a24a;padding:0 10px 8px;margin-bottom:6px;border-bottom:1px solid rgba(201,162,74,.25)}
 #sectionList,#sectionSheetList{list-style:none;margin:0;padding:0}
-.section-item{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;border-left:2px solid transparent;color:var(--mute);font:500 15px var(--sans);padding:7px 10px;cursor:pointer}
-.section-item:hover{color:var(--ink)}
-.section-item[aria-current]{color:var(--ink);border-left-color:var(--acc);font-weight:600}
-.section-item[aria-pressed=true]{color:var(--ink);background:rgba(246,196,83,.16);border-left-color:var(--acc)}
-.section-count{color:var(--mute);font-weight:400;font-size:13px;align-self:center}
+.section-item{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;border-left:2px solid transparent;border-radius:8px;color:rgba(238,231,214,.74);font:500 15px var(--serif);padding:7px 10px;cursor:pointer}
+.section-item:hover{color:#fff4dc;background:rgba(201,162,74,.08)}
+.section-item[aria-current]{color:#f6ead4;border-left-color:#c9a24a;background:rgba(201,162,74,.1);font-weight:600}
+.section-item[aria-pressed=true]{color:#fff4dc;background:rgba(242,182,80,.22);border-left-color:var(--acc)}
+.section-count{color:#c9a24a;font:500 13px var(--sans);align-self:center}
 #sectionBar{display:none;position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:5}
 #sectionName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60vw}
 #sectionCurrent{display:flex;gap:10px;align-items:baseline;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 18px;font:500 15px var(--sans);cursor:pointer;max-width:92vw}
 #sectionCount{color:var(--mute);font-weight:400;font-size:13px}
-#sectionSheet{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:6;width:min(360px,92vw);max-height:50vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px}
+#sectionSheet{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:6;width:min(360px,92vw);max-height:50vh;overflow-y:auto;background:var(--panel);border:1px solid rgba(201,162,74,.4);border-radius:14px;padding:6px}
 body.list-mode #sections,body.list-mode #sectionBar,body.list-mode #sectionSheet{display:none!important}
 @media (max-width:1000px){
   #sections{display:none}
