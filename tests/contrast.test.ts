@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {MIN_CONTRAST, contrastRatio, hslToRgb, luminance, spineScheme} from '../src/textures/contrast';
-import {SPINE_LIGHT, SPINE_SAT, paletteOf, spineLightness, spineLook} from '../src/textures/draw';
+import {SPINE_LIGHT, SPINE_SAT, bookKind, foilFor, paletteOf, spineLightness, spineLook} from '../src/textures/draw';
 import {makeBook} from '../src/data/books';
 
 describe('contrast maths', () => {
@@ -67,5 +67,27 @@ describe('spine harmony', () => {
       cells.add(`${Math.floor(look.h / 15)}:${Math.floor(look.l / 4)}`);
     }
     expect(cells.size).toBeGreaterThanOrEqual(60);
+  });
+});
+
+describe('bindings and foil', () => {
+  it('gives every book the same binding each time, with all three kinds present', () => {
+    const books = Array.from({length: 200}, (_, i) => makeBook({title: `Book ${i}`}));
+    const kinds = books.map(bookKind);
+    expect(books.map(bookKind)).toEqual(kinds);
+    expect(new Set(kinds)).toEqual(new Set(['hardcover', 'paperback', 'jacket']));
+  });
+
+  it('uses gold foil only where it keeps 4.5:1 and the ink is light', () => {
+    let foiled = 0;
+    for (let h = 0; h < 360; h += 15) for (let s = 22; s <= 48; s += 13) for (let l = 28; l <= 52; l += 4) {
+      const look = {h, s, ...spineScheme(h, s, l)};
+      const foil = foilFor(look);
+      if (!foil) continue;
+      foiled++;
+      expect(look.ink).toBe('light');
+      expect(contrastRatio(luminance(...hslToRgb(look.h, look.s, look.l)), luminance(227, 194, 106))).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
+    expect(foiled).toBeGreaterThan(0);
   });
 });

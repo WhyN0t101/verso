@@ -1,6 +1,6 @@
 import type {Book} from '../types';
-import {TAU, clamp, hsl} from '../util';
-import {spineScheme, type SpineScheme} from './contrast';
+import {TAU, clamp, hash, hsl} from '../util';
+import {MIN_CONTRAST, contrastRatio, hslToRgb, luminance, spineScheme, type SpineScheme} from './contrast';
 
 /** Literata: what a person wrote or a book owns (titles, notes, signage). Atkinson Hyperlegible Next: small interface text. */
 export const SERIF = 'Literata,Georgia,serif';
@@ -86,6 +86,51 @@ export function spineLook(b: Book): {h: number; s: number} & SpineScheme {
   return {h: p.h, s: p.s, ...spineScheme(p.h, p.s, spineLightness(b))};
 }
 
+export type BookKind = 'hardcover' | 'paperback' | 'jacket';
+
+/** Stable per book, from its id: mostly hardcovers, some paperbacks, a few in a dust jacket. */
+export function bookKind(b: Book): BookKind {
+  const n = hash(b.id) % 20;
+  return n < 11 ? 'hardcover' : n < 17 ? 'paperback' : 'jacket';
+}
+
+const FOIL = '#e3c26a';
+const FOIL_LUM = luminance(227, 194, 106);
+
+/** Gold foil for the lettering, only where it keeps the same 4.5:1 the ink does. The lighter end of the spine is the hard case. */
+export function foilFor(look: {h: number; s: number; l: number; ink: 'light' | 'dark'}): string | null {
+  if (look.ink !== 'light') return null;
+  return contrastRatio(luminance(...hslToRgb(look.h, look.s, look.l)), FOIL_LUM) >= MIN_CONTRAST ? FOIL : null;
+}
+
+/** What is drawn at the head and foot of a spine, by how the book is bound. The fill is already set. */
+function spineDecor(g: CanvasRenderingContext2D, W: number, H: number, b: Book, kind: BookKind): void {
+  const top = H * 0.05;
+  const foot = H * 0.95;
+  if (kind === 'hardcover') return spineOrnament(g, W, H, b.pattern);
+  if (kind === 'paperback') {
+    // A publisher's strip at the head and nothing else: paperbacks are plain.
+    g.fillRect(0, top - 4, W, 4);
+    return;
+  }
+  // Dust jacket: a printed band, a pair of rules and a round imprint at the foot.
+  g.fillRect(0, H * 0.035, W, H * 0.028);
+  g.fillRect(0, H * 0.075, W, 2);
+  g.fillRect(0, foot - 12, W, 2);
+  g.beginPath();
+  g.arc(W / 2, foot + 2, Math.min(W * 0.16, 12), 0, TAU);
+  g.lineWidth = 3;
+  g.strokeStyle = g.fillStyle;
+  g.stroke();
+}
+
+/** Thin dark grooves just inside each edge, where the cover board meets the spine. */
+function hingeGrooves(g: CanvasRenderingContext2D, W: number, H: number, gap: number, style: string): void {
+  g.fillStyle = style;
+  g.fillRect(gap + W * 0.07, 0, 2, H);
+  g.fillRect(W - gap - W * 0.07 - 2, 0, 2, H);
+}
+
 /**
  * Rules and a small emblem at the head and foot of a spine, one of four styles by the book's pattern.
  * They stay in the top and bottom tenth, clear of the title and author, so contrast is unaffected.
@@ -167,9 +212,12 @@ export function spineCanvas(b: Book): HTMLCanvasElement {
   grd.addColorStop(1, hsl(look.h, look.s, look.l + drift));
   g.fillStyle = grd;
   g.fillRect(0, 0, W, H);
-  g.fillStyle = look.inkCss;
+  const kind = bookKind(b);
+  // Gold foil lettering on some hardcovers, where it reads as well as the ink would.
+  const foil = kind === 'hardcover' && hash(b.id + 'foil') % 3 === 0 ? foilFor(look) : null;
+  g.fillStyle = foil ?? look.inkCss;
   g.globalAlpha = 0.85;
-  spineOrnament(g, W, H, b.pattern);
+  spineDecor(g, W, H, b, kind);
   g.globalAlpha = 1;
   g.textBaseline = 'middle';
   let fs = Math.min(W * 0.52, 76);
@@ -207,6 +255,25 @@ export function spineCanvas(b: Book): HTMLCanvasElement {
   g.fillRect(W - gap, 0, gap, H);
   g.fillStyle = 'rgba(255,255,255,.22)';
   g.fillRect(gap, 0, 2, H);
+  if (kind !== 'paperback') hingeGrooves(g, W, H, gap, 'rgba(0,0,0,.28)');
+  // Wear: the head is sun-faded, and the corners are rubbed lighter where a book is pulled off the shelf.
+  const fade = g.createLinearGradient(0, 0, 0, H * 0.3);
+  fade.addColorStop(0, 'rgba(255,236,190,.12)');
+  fade.addColorStop(1, 'rgba(255,236,190,0)');
+  g.fillStyle = fade;
+  g.fillRect(gap, 0, W - 2 * gap, H * 0.3);
+  g.fillStyle = 'rgba(255,255,255,.07)';
+  g.fillRect(gap, 0, W - 2 * gap, H * 0.012);
+  g.fillRect(gap, H * 0.988, W - 2 * gap, H * 0.012);
+  if (kind === 'paperback') {
+    // Soft vertical creases and two stress cracks across the spine.
+    g.fillStyle = 'rgba(255,255,255,.13)';
+    g.fillRect(W * 0.34, 0, 1.5, H);
+    g.fillRect(W * 0.64, 0, 1.5, H);
+    g.fillStyle = 'rgba(255,255,255,.2)';
+    g.fillRect(W * 0.3, H * 0.41, W * 0.4, 1.5);
+    g.fillRect(W * 0.35, H * 0.64, W * 0.3, 1.5);
+  }
   return c;
 }
 
