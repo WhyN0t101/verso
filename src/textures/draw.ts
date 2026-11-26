@@ -86,6 +86,74 @@ export function spineLook(b: Book): {h: number; s: number} & SpineScheme {
   return {h: p.h, s: p.s, ...spineScheme(p.h, p.s, spineLightness(b))};
 }
 
+/**
+ * Rules and a small emblem at the head and foot of a spine, one of four styles by the book's pattern.
+ * They stay in the top and bottom tenth, clear of the title and author, so contrast is unaffected.
+ */
+function spineOrnament(g: CanvasRenderingContext2D, W: number, H: number, pattern: number): void {
+  const rule = (y: number, t: number): void => g.fillRect(0, y, W, t);
+  const top = H * 0.05;
+  const foot = H * 0.95;
+  const r = Math.min(W * 0.09, 8);
+  switch (pattern) {
+    case 1:
+      rule(top, 7);
+      for (const dy of [-18, -9, 0]) rule(foot + dy, 2);
+      break;
+    case 2:
+      g.beginPath();
+      g.moveTo(W / 2, top - r * 1.6);
+      g.lineTo(W / 2 + r * 1.2, top);
+      g.lineTo(W / 2, top + r * 1.6);
+      g.lineTo(W / 2 - r * 1.2, top);
+      g.closePath();
+      g.fill();
+      rule(foot - 6, 5);
+      rule(foot - 16, 2);
+      break;
+    case 3:
+      rule(top - 8, 2);
+      rule(top, 5);
+      rule(top + 10, 2);
+      for (const dx of [-3, 0, 3]) {
+        g.beginPath();
+        g.arc(W / 2 + dx * r, foot - 6, r * 0.5, 0, TAU);
+        g.fill();
+      }
+      break;
+    default:
+      rule(top, 5);
+      rule(top + 12, 2);
+      rule(foot - 6, 5);
+      rule(foot - 16, 2);
+  }
+}
+
+/** Paper edge for the top, bottom and fore-edge of a book: fine sheet lines, darker where the cover boards overhang. */
+export function pagesCanvas(): HTMLCanvasElement {
+  const S = 128;
+  const [c, g] = newCanvas(S, S);
+  g.fillStyle = '#efe6d0';
+  g.fillRect(0, 0, S, S);
+  // Sheets are stacked across the book's thickness (u), so the lines run along v.
+  for (let x = 0; x < S; x += 2) {
+    g.fillStyle = `rgba(110,90,60,${x % 6 === 0 ? 0.2 : 0.1})`;
+    g.fillRect(x, 0, 1, S);
+  }
+  const shade = (x0: number, y0: number, x1: number, y1: number): void => {
+    const grd = g.createLinearGradient(x0, y0, x1, y1);
+    grd.addColorStop(0, 'rgba(40,26,12,.55)');
+    grd.addColorStop(1, 'rgba(40,26,12,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, S, S);
+  };
+  shade(0, 0, S * 0.12, 0);
+  shade(S, 0, S * 0.88, 0);
+  shade(0, 0, 0, S * 0.1);
+  shade(0, S, 0, S * 0.9);
+  return c;
+}
+
 export function spineCanvas(b: Book): HTMLCanvasElement {
   const S = 400;
   const W = Math.round(b.w * S);
@@ -101,10 +169,7 @@ export function spineCanvas(b: Book): HTMLCanvasElement {
   g.fillRect(0, 0, W, H);
   g.fillStyle = look.inkCss;
   g.globalAlpha = 0.85;
-  g.fillRect(0, H * 0.05, W, 5);
-  g.fillRect(0, H * 0.05 + 12, W, 2);
-  g.fillRect(0, H * 0.95 - 6, W, 5);
-  g.fillRect(0, H * 0.95 - 16, W, 2);
+  spineOrnament(g, W, H, b.pattern);
   g.globalAlpha = 1;
   g.textBaseline = 'middle';
   let fs = Math.min(W * 0.52, 76);
