@@ -23,8 +23,11 @@ function renderStars(b: Book): void {
   const box = $('pStars');
   box.replaceChildren();
   for (let i = 1; i <= 5; i++) {
-    const s = document.createElement('span');
+    const s = document.createElement('button');
+    s.type = 'button';
     s.textContent = '★';
+    s.setAttribute('aria-label', `${i} ${i === 1 ? 'star' : 'stars'}`);
+    s.setAttribute('aria-pressed', String(b.rating === i));
     if (i <= b.rating) s.className = 'on';
     s.addEventListener('click', () => {
       b.rating = b.rating === i ? 0 : i;

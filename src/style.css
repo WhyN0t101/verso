@@ -58,8 +58,8 @@ body.selecting canvas#gl{cursor:pointer}
 #pTitle{font-family:var(--serif);font-weight:700;font-size:30px;line-height:1.15;margin:14px 0 4px}
 #pAuthor{color:var(--mute);font-size:15px;margin-bottom:10px}
 #pStars{display:flex;gap:4px;margin-bottom:6px}
-#pStars span{font-size:26px;cursor:pointer;color:rgba(255,255,255,.2);line-height:1;user-select:none}
-#pStars span.on{color:var(--acc)}
+#pStars button{font:inherit;font-size:26px;cursor:pointer;color:rgba(255,255,255,.2);line-height:1;user-select:none;background:none;border:0;padding:0}
+#pStars button.on{color:var(--acc)}
 h3{font:500 13px var(--sans);color:var(--mute);margin:22px 0 8px}
 #pSummary{margin:0;line-height:1.6;font:400 17px/1.6 var(--serif);max-width:62ch}
 #pNotes{width:100%;min-height:150px;resize:vertical;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:12px;font:400 17px/1.6 var(--serif)}
