@@ -75,6 +75,12 @@ interface InFlight {
 }
 const inflight = new Map<string, InFlight>();
 const settled = new Map<string, HTMLImageElement | null>();
+// Decoded images are large; an import of hundreds of covers would otherwise keep them all until the tab closes.
+const MAX_SETTLED = 64;
+function remember(url: string, img: HTMLImageElement | null): void {
+  settled.set(url, img);
+  if (settled.size > MAX_SETTLED) settled.delete(settled.keys().next().value as string);
+}
 
 export interface LoadOptions {
   /** Aborting drops this caller; the request itself stops once no caller is left. */
@@ -144,7 +150,7 @@ function enqueue(url: string, entry: InFlight, inBackground: boolean): void {
     AbortSignal.any([mine.signal, entry.ctl.signal]),
   )
     .then((o) => {
-      if (o.final) settled.set(url, o.img);
+      if (o.final) remember(url, o.img);
       resolve?.(o.img);
     })
     .catch((err: unknown) => {
