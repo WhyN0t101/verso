@@ -199,6 +199,8 @@ $('menuBtn').addEventListener('click', (ev) => {
 menu.addEventListener('click', () => setMenu(false));
 document.addEventListener('click', () => setMenu(false));
 $('openStyle').addEventListener('click', openStyle);
+$('styleBtn').addEventListener('click', openStyle);
+$('emptyAdd').addEventListener('click', () => $('add').click());
 $('resetLook').addEventListener('click', () => {
   applyStudy(state.settings);
   persist();

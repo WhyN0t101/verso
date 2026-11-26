@@ -2,6 +2,7 @@ import type {Book} from '../types';
 import {$} from '../util';
 import {STATUS_LABELS, applyStatus, isoDate, todayIso} from '../data/books';
 import type {Status} from '../types';
+import {spineLook} from '../textures/draw';
 
 export interface PanelHooks {
   onClose(): void;
@@ -104,6 +105,12 @@ export function initPanel(h: PanelHooks): void {
 
 export function fillPanel(b: Book): void {
   current = b;
+  // The panel takes its colour from the book's spine, so the open book and the page about it match.
+  const look = spineLook(b);
+  panel.style.setProperty('--tint', `hsl(${look.h} ${look.s}% ${look.l}%)`);
+  const cover = $<HTMLImageElement>('pCover');
+  cover.classList.toggle('hidden', !b.cover);
+  if (b.cover) cover.src = b.cover;
   $('pGenre').textContent = b.genre;
   $('pTitle').textContent = b.title;
   const by = b.author ? 'by ' + b.author : '';

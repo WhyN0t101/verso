@@ -11,10 +11,11 @@
 <canvas id="gl"></canvas>
 
 <header id="bar">
-  <div class="brand">Verso<small id="count"></small></div>
+  <div class="brand"><span>Verso</span><small id="count"></small></div>
   <input id="q" type="search" placeholder="Search title, author or genre" autocomplete="off" aria-label="Search books">
   <div id="statusChips" role="group" aria-label="Filter by reading status"></div>
   <button class="btn" id="selectBtn">Select</button>
+  <button class="btn" id="styleBtn">Style</button>
   <button class="btn primary" id="add">Add book</button>
   <button class="btn icon" id="menuBtn" aria-label="Menu" aria-haspopup="true" aria-expanded="false">&#8943;</button>
 </header>
@@ -23,7 +24,7 @@
   <button id="viewToggle">List view</button>
   <button id="selectMenu">Select books</button>
   <button id="groupToggle">Group by genre: off</button>
-  <button id="openStyle">Style the shelf</button>
+  <button id="openStyle" class="menu-style">Style the shelf</button>
   <button id="resetLook">Reset appearance</button>
   <button id="exportBackup">Export backup (JSON)</button>
   <button id="importBackup">Import backup</button>
@@ -52,12 +53,13 @@
 </div>
 <div id="sectionSheet" class="hidden" role="region" aria-label="Jump to a section"><ul id="sectionSheetList"></ul></div>
 <div id="hint">Drag or swipe to browse. Click a book to open it.</div>
-<div id="empty" class="hidden">Your shelf is empty. Add your first book to start.</div>
+<div id="empty" class="hidden"><p>Your shelf is empty.</p><button class="btn primary" id="emptyAdd">Add your first book</button></div>
 <div id="tip"></div>
 <div id="toast" role="status"></div>
 
 <aside id="panel" aria-live="polite">
   <button id="close" aria-label="Close book">&times;</button>
+  <img id="pCover" class="hidden" alt="">
   <span class="pill" id="pGenre"></span>
   <h2 id="pTitle"></h2>
   <div id="pAuthor"></div>
