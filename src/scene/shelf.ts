@@ -149,7 +149,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   // Filmic tone mapping that keeps hues: lamp light rolls off into highlights instead of clipping flat.
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   // Books rarely move, and the shadow pass redraws every book, so it only runs when something changed.
   renderer.shadowMap.autoUpdate = false;
 
