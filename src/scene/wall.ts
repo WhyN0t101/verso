@@ -71,7 +71,11 @@ interface Section {
  */
 export function groupSections(books: Book[]): Section[] {
   const by = new Map<string, Book[]>();
-  for (const b of books) by.set(b.genre, [...(by.get(b.genre) ?? []), b]);
+  for (const b of books) {
+    const list = by.get(b.genre);
+    if (list) list.push(b);
+    else by.set(b.genre, [b]);
+  }
   const literalOther = by.get(OTHER) ?? [];
   let named: Section[] = [...by].filter(([name]) => name !== OTHER).map(([name, list]) => ({name, books: list}));
   let folded: Section[] = [];

@@ -3,7 +3,7 @@ import {state} from '../state';
 import {matches} from '../search';
 import {$} from '../util';
 
-/** Flat, cheap-to-render alternative to the 3D shelf: used without WebGL and as a fallback for big collections. */
+/** Flat, cheap-to-render alternative to the 3D shelf: used without WebGL. */
 export function renderList(onOpen: (id: string) => void): void {
   const ul = $('listView');
   ul.replaceChildren();

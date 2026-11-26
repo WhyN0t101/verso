@@ -497,13 +497,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const floor = baseY + BOARD + i * ROW_H;
       for (const {b, x: bx} of row) {
         const pages = () => new THREE.MeshStandardMaterial({color: 0xe9dfc8, roughness: 0.95});
+        const colors = faceColors(b);
         // Order follows BoxGeometry faces: +x cover, -x back board, +y, -y, +z spine, -z.
         const mats = [
-          new THREE.MeshStandardMaterial({color: faceColors(b)[0], roughness: 0.6}),
-          new THREE.MeshStandardMaterial({color: faceColors(b)[1], roughness: 0.7}),
+          new THREE.MeshStandardMaterial({color: colors[0], roughness: 0.6}),
+          new THREE.MeshStandardMaterial({color: colors[1], roughness: 0.7}),
           pages(),
           pages(),
-          new THREE.MeshStandardMaterial({color: faceColors(b)[2], roughness: 0.55}),
+          new THREE.MeshStandardMaterial({color: colors[2], roughness: 0.55}),
           pages(),
         ];
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mats);

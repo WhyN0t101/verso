@@ -29,8 +29,6 @@ function render(): void {
   hooks.onChange();
 }
 
-export const isSelecting = (): boolean => state.selecting;
-
 export function enterSelect(first?: string): void {
   state.selecting = true;
   confirming = false;
