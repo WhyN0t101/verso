@@ -125,6 +125,7 @@ label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;col
 .section-item{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;border-left:2px solid transparent;color:var(--mute);font:500 15px var(--sans);padding:7px 10px;cursor:pointer}
 .section-item:hover{color:var(--ink)}
 .section-item[aria-current]{color:var(--ink);border-left-color:var(--acc);font-weight:600}
+.section-item[aria-pressed=true]{color:var(--ink);background:rgba(246,196,83,.16);border-left-color:var(--acc)}
 .section-count{color:var(--mute);font-weight:400;font-size:13px;align-self:center}
 #sectionBar{display:none;position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:5}
 #sectionName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60vw}

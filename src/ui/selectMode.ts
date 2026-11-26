@@ -56,7 +56,7 @@ export function initSelect(h: SelectHooks): void {
   $('selectBtn').addEventListener('click', () => (state.selecting ? exitSelect() : enterSelect()));
   $('selectMenu').addEventListener('click', () => (state.selecting ? exitSelect() : enterSelect()));
   $('selAll').addEventListener('click', () => {
-    for (const id of matchingIds(state.books, state.q, state.status)) state.picked.add(id);
+    for (const id of matchingIds(state.books, state.q, state.status, state.section?.genres ?? null)) state.picked.add(id);
     confirming = false;
     render();
   });

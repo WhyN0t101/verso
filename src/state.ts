@@ -14,6 +14,8 @@ export const state = {
   selecting: false,
   picked: new Set<string>(),
   status: '' as Status | '',
+  /** Genre section picked in the jump list: its books stand out. Only used while grouped. */
+  section: null as {name: string; genres: string[]} | null,
   fmt: 'post' as 'post' | 'story' | 'square',
   theme: 'classic' as ThemeId,
   editing: null as string | null,

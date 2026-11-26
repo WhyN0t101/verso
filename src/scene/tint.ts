@@ -3,6 +3,6 @@ export function tintFor(o: {isSelected: boolean; anySelected: boolean; filtering
   // The pulled-out book is never dimmed, whatever the search or filter says about it.
   if (o.isSelected) return 0xffffff;
   if (o.anySelected) return 0x5e564d;
-  if (o.filtering && !o.matches) return 0x4d4740;
+  if (o.filtering && !o.matches) return 0x2b2722;
   return 0xffffff;
 }

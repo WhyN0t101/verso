@@ -10,7 +10,7 @@ import {initPanel, showPanel, hidePanel, fillPanel} from './ui/panel';
 import {initForm, openForm, closeForm, setGenreOptions} from './ui/form';
 import {initExport, openExport, closeExport} from './ui/exportDialog';
 import {renderList} from './ui/list';
-import {closeSectionSheet, initSections, renderSections} from './ui/sections';
+import {closeSectionSheet, currentView, initSections, renderSections} from './ui/sections';
 import {enterSelect, exitSelect, initSelect, togglePick} from './ui/selectMode';
 import {removeBooks, restoreBooks} from './data/bulk';
 import {createToneQueue} from './toneQueue';
@@ -174,7 +174,15 @@ const tones = createToneQueue({
   },
 });
 initExport();
-initSections((i) => shelf?.focusCase(i));
+initSections(
+  (i) => shelf?.focusCase(i),
+  () => {
+    if (state.sel) deselect();
+    if (listMode) renderList(activate);
+    const view = currentView();
+    if (view) renderSections(view);
+  },
+);
 initStyle(() => shelf?.applySettings());
 
 const menu = $('menu');
@@ -202,6 +210,7 @@ const showGroup = (): void => {
 showGroup();
 $('groupToggle').addEventListener('click', () => {
   if (state.sel) deselect();
+  state.section = null;
   if (state.settings.groupByGenre) delete state.settings.groupByGenre;
   else state.settings.groupByGenre = true;
   persist();
@@ -288,8 +297,8 @@ function renderStatusChips(): void {
 }
 
 $('q').addEventListener('keydown', (ev) => {
-  if (ev.key !== 'Enter' || !(state.q || state.status)) return;
-  const first = state.books.find((b) => matches(b, state.q, state.status));
+  if (ev.key !== 'Enter' || !(state.q || state.status || state.section)) return;
+  const first = state.books.find((b) => matches(b, state.q, state.status, state.section?.genres ?? null));
   if (!first) return;
   shelf?.focusBook(first.id);
   activate(first.id);
@@ -305,7 +314,12 @@ addEventListener('keydown', (ev) => {
   else if (!$('modal').classList.contains('hidden')) closeForm();
   else if (!$('export').classList.contains('hidden')) closeExport();
   else if (state.sel) deselect();
-  else if (state.q) {
+  else if (state.section) {
+    state.section = null;
+    if (listMode) renderList(activate);
+    const view = currentView();
+    if (view) renderSections(view);
+  } else if (state.q) {
     $<HTMLInputElement>('q').value = '';
     state.q = '';
     if (listMode) renderList(activate);

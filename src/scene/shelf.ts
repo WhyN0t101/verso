@@ -61,6 +61,8 @@ interface Entry {
   coverPending?: boolean;
   caseIndex: number;
   picked: boolean;
+  /** Strength of the warm glow now on the book's faces. */
+  glow: number;
   /** Result of the search and status filter, refreshed only when they change. */
   match: boolean;
 }
@@ -521,7 +523,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           grp.scale.setScalar(pv.s);
         }
         bookRoot.add(grp);
-        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, picked: false, match: true});
+        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, picked: false, glow: 0, match: true});
         pickables.push(mesh);
       }
     }));
@@ -758,23 +760,25 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       force = true;
     }
     emitView();
-    const filtering = !!(state.q || state.status);
-    const fk = `${state.q}|${state.status}`;
+    const filtering = !!(state.q || state.status || state.section);
+    const fk = `${state.q}|${state.status}|${state.section?.name ?? ''}`;
     if (fk !== filterKey) {
       filterKey = fk;
-      entries.forEach((e) => (e.match = matches(e.b, state.q, state.status)));
+      entries.forEach((e) => (e.match = matches(e.b, state.q, state.status, state.section?.genres ?? null)));
     }
     entries.forEach((e) => {
       const isSel = sel === e;
       const match = e.match;
       const picked = state.picked.has(e.b.id);
-      if (picked !== e.picked) {
+      // A warm glow on every face marks books chosen in Select mode, and a softer one the books a search or filter found.
+      const glow = picked ? 0.45 : filtering && match && !sel ? 0.28 : 0;
+      if (picked !== e.picked || glow !== e.glow) {
         e.picked = picked;
-        // A warm glow on every face marks the books chosen in Select mode.
+        e.glow = glow;
         e.mats.forEach((m, i) => {
           if (i === MAT.cover) return; // the cover face keeps its own glow
-          m.emissive.setHex(picked ? 0xf2b650 : 0x000000);
-          m.emissiveIntensity = picked ? 0.45 : 0;
+          m.emissive.setHex(glow ? 0xf2b650 : 0x000000);
+          m.emissiveIntensity = glow;
         });
         moved++;
       }
@@ -804,8 +808,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
           ty += 0.1;
           tz += 0.18;
         } else if (!sel && ((filtering && match) || e.picked)) {
-          ty += 0.08;
-          tz += 0.22;
+          ty += 0.1;
+          tz += 0.32;
         }
         const far = p.z > e.home.z + 0.5;
         rxy = far ? 9 : 10;
@@ -901,8 +905,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       panTarget = caseX(clampCase(index, wall.cases.length), pitch);
     },
     revealMatch() {
-      if (!state.q && !state.status) return;
-      const c = firstMatchCase(wall, (b) => matches(b, state.q, state.status));
+      if (!state.q && !state.status && !state.section) return;
+      const c = firstMatchCase(wall, (b) => matches(b, state.q, state.status, state.section?.genres ?? null));
       if (c !== null) panTarget = caseX(c, pitch);
     },
     setVisible(on) {

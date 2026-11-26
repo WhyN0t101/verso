@@ -26,6 +26,6 @@ export function restoreBooks(books: Book[], removed: Removal[]): Book[] {
 }
 
 /** Ids of the books that pass the current search and status filter: what "Select all matching" picks. */
-export function matchingIds(books: Book[], q: string, status: Status | ''): string[] {
-  return books.filter((b) => matches(b, q, status)).map((b) => b.id);
+export function matchingIds(books: Book[], q: string, status: Status | '', genres: readonly string[] | null = null): string[] {
+  return books.filter((b) => matches(b, q, status, genres)).map((b) => b.id);
 }

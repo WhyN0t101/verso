@@ -48,3 +48,13 @@ describe('select all matching', () => {
     expect(matchingIds(books, 'zzz', '')).toEqual([]);
   });
 });
+
+describe('matching by genre section', () => {
+  it('limits the match to the picked genres and combines with the other filters', () => {
+    const books = shelf();
+    expect(matchingIds(books, '', '', ['Classic'])).toEqual([books[1]!.id]);
+    expect(matchingIds(books, '', '', ['Classic', 'Fiction'])).toHaveLength(5);
+    expect(matchingIds(books, 'dune', '', ['Classic'])).toEqual([]);
+    expect(matchingIds(books, '', '', null)).toHaveLength(5);
+  });
+});
