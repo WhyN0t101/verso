@@ -229,13 +229,24 @@ export function spineCanvas(b: Book): HTMLCanvasElement {
     g.save();
     g.filter = 'grayscale(1)';
     g.globalCompositeOperation = 'soft-light';
-    g.globalAlpha = 0.45;
+    g.globalAlpha = 0.7;
     g.scale(0.4, 0.4);
     g.fillStyle = weave;
     g.fillRect(0, 0, W / 0.4, H / 0.4);
     g.restore();
   }
   // Gold foil lettering on some hardcovers, where it reads as well as the ink would.
+  // A label panel on some hardcovers, shaded away from the ink so the lettering only gains contrast.
+  if (kind === 'hardcover' && b.pattern === 3) {
+    g.fillStyle = hsl(look.h, look.s, look.l + (look.ink === 'light' ? -12 : 12));
+    g.globalAlpha = 0.55;
+    g.fillRect(W * 0.14, H * 0.085, W * 0.72, H * 0.64);
+    g.globalAlpha = 0.5;
+    g.strokeStyle = look.inkCss;
+    g.lineWidth = 2;
+    g.strokeRect(W * 0.14 + 4, H * 0.085 + 4, W * 0.72 - 8, H * 0.64 - 8);
+    g.globalAlpha = 1;
+  }
   const foil = kind === 'hardcover' && hash(b.id + 'foil') % 3 === 0 ? foilFor(look) : null;
   g.fillStyle = foil ?? look.inkCss;
   g.globalAlpha = 0.85;
@@ -278,6 +289,14 @@ export function spineCanvas(b: Book): HTMLCanvasElement {
   g.fillStyle = 'rgba(255,255,255,.22)';
   g.fillRect(gap, 0, 2, H);
   if (kind !== 'paperback') hingeGrooves(g, W, H, gap, 'rgba(0,0,0,.28)');
+  // The spine is rounded: dark towards both edges, lit in the middle.
+  const round = g.createLinearGradient(0, 0, W, 0);
+  round.addColorStop(0, 'rgba(0,0,0,.42)');
+  round.addColorStop(0.35, 'rgba(255,240,210,' + (kind === 'jacket' ? '.2' : '.1') + ')');
+  round.addColorStop(0.65, 'rgba(255,240,210,0)');
+  round.addColorStop(1, 'rgba(0,0,0,.45)');
+  g.fillStyle = round;
+  g.fillRect(0, 0, W, H);
   // Wear: the head is sun-faded, and the corners are rubbed lighter where a book is pulled off the shelf.
   const fade = g.createLinearGradient(0, 0, 0, H * 0.3);
   fade.addColorStop(0, 'rgba(255,236,190,.12)');

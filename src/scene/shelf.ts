@@ -81,7 +81,7 @@ const FASCIA_H = 0.6;
 /** Crown moulding above the fascia: two stepped slabs. */
 const CORNICE_H = 0.14;
 /** World units covered by one repeat of the wood grain texture. */
-const WOOD_TILE = 2.5;
+const WOOD_TILE = 1.9;
 /** How a binding looks and feels: corner radius, and how glossy the spine is. Paperbacks are soft and matt, jackets glossy. */
 const BINDING: Record<BookKind, {radius: number; gloss: number}> = {
   hardcover: {radius: 0.016, gloss: 0.55},
@@ -146,6 +146,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     return null;
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // Filmic tone mapping that keeps hues: lamp light rolls off into highlights instead of clipping flat.
+  renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   // Books rarely move, and the shadow pass redraws every book, so it only runs when something changed.
@@ -238,6 +240,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     band(0, c.height, 0, c.height * 0.8, 0.3);
     band(0, 0, c.width * 0.14, 0, 0.4);
     band(c.width, 0, c.width * 0.86, 0, 0.4);
+    // Back boards: a dark joint with a lit edge beside it between each pair of planks.
+    for (let i = 1; i < 6; i++) {
+      const x = Math.round((c.width * i) / 6);
+      g.fillStyle = 'rgba(0,0,0,.35)';
+      g.fillRect(x - 1, 0, 1.5, c.height);
+      g.fillStyle = 'rgba(255,230,190,.08)';
+      g.fillRect(x + 1, 0, 1, c.height);
+    }
     return new THREE.CanvasTexture(c);
   }
   const rowShade = new THREE.MeshBasicMaterial({map: rowShadeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1});
@@ -253,7 +263,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       }
       map.colorSpace = THREE.SRGBColorSpace;
       photo = {map, normal, mean: meanColor(map.image as CanvasImageSource)};
-      woodMat.normalScale.set(1.4, 1.4);
+      woodMat.normalScale.set(1, 1);
       applySettings();
     })
     .catch((err: unknown) => console.warn('wood photo unavailable', err));
@@ -264,7 +274,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     if (photo) {
       // The photographed grain is tinted so its average colour becomes the preset's wood colour.
       const base = new THREE.Color(WOODS[woodId].base);
-      const tint = new THREE.Color(base.r / photo.mean.r, base.g / photo.mean.g, base.b / photo.mean.b);
+      // Only part of the way to the preset colour: the photo keeps its own depth and the stain does not turn it to paint.
+      const tint = new THREE.Color(1, 1, 1).lerp(new THREE.Color(base.r / photo.mean.r, base.g / photo.mean.g, base.b / photo.mean.b), 0.55);
       woodMat.map = photo.map;
       woodMat.normalMap = photo.normal;
       woodMat.bumpMap = null;
@@ -355,7 +366,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
 
   /** Maps the wood texture at a fixed size per world unit, so grain is not stretched on long or tall boards. */
-  function woodUV(g: THREE.BoxGeometry, w: number, h: number, d: number, upright: boolean): void {
+  function woodUV(g: THREE.BoxGeometry, w: number, h: number, d: number, upright: boolean, shiftU: number, shiftV: number): void {
     const uv = g.getAttribute('uv') as THREE.BufferAttribute;
     // BoxGeometry faces in order: +x, -x, +y, -y, +z, -z, four vertices each.
     const sizes: [number, number][] = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
@@ -363,8 +374,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       // Uprights have their grain along the height; the texture's lines run along u, so u and v swap on their sides.
       const swap = upright && face !== 2 && face !== 3;
       for (let i = face * 4; i < face * 4 + 4; i++) {
-        const u = (uv.getX(i) * a) / WOOD_TILE;
-        const v = (uv.getY(i) * b) / WOOD_TILE;
+        const u = (uv.getX(i) * a) / WOOD_TILE + shiftU;
+        const v = (uv.getY(i) * b) / WOOD_TILE + shiftV;
         if (swap) uv.setXY(i, v, u);
         else uv.setXY(i, u, v);
       }
@@ -372,7 +383,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
   function box(w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, upright = false): THREE.Mesh {
     const g = new THREE.BoxGeometry(w, h, d);
-    woodUV(g, w, h, d, upright);
+    // Each board takes its grain from a different part of the photo, so no two look cut from the same strip.
+    const pick = rng(hash(`${x.toFixed(2)}|${y.toFixed(2)}|${z.toFixed(2)}`));
+    woodUV(g, w, h, d, upright, pick(), pick());
     const m = new THREE.Mesh(g, mat);
     m.position.set(x, y, z);
     m.castShadow = m.receiveShadow = true;

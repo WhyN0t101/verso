@@ -3,7 +3,7 @@ import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {MeshoptDecoder} from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 /** Optimised CC0 models in public/models (see CREDITS.md there): meshopt-compressed, 512 to 1024 px WebP textures. */
-export type ModelName = 'armchair' | 'table' | 'lamp' | 'plant' | 'picture' | 'vase';
+export type ModelName = 'armchair' | 'table' | 'lamp' | 'plant' | 'picture' | 'painting' | 'vase';
 
 /** The photographed models are lit like a studio shot; this warms and dims them to sit in a lamplit room. */
 const GRADE = new THREE.Color(0xe6c9a0);

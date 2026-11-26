@@ -147,6 +147,8 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
     add('table', 2.3, tableX, floorY, 0.2, 0);
     add('lamp', 2.0, tableX + 0.3, topY, 0.1, 0);
     add('picture', 1.0, tableX - 0.6, topY, 0.5, 0.3);
+    // A framed painting on the wall above the armchair: the wall is the page background, so it hangs where the wall would be.
+    add('painting', 4.2, chairX + 0.4, floorY + 7.4, -layoutNow.depth / 2 - 0.5, 0);
     for (const [w, d, x, y, z] of [[4.6, 3.6, chairX, floorY, 0.3], [2.6, 2.2, chairX - 2.6, floorY, 0.3], [2.9, 2.9, tableX, floorY, 0.2], [1.3, 1.3, tableX + 0.3, topY, 0.1], [1.1, 0.9, tableX - 0.6, topY, 0.5]] as const) props.add(contactShadow(w, d, x, y + 0.03, z));
     // The flame sits about two thirds up the lamp: the light and its halo are put there.
     const flame = new THREE.Vector3(tableX + 0.35, topY + 1.3, 0.1);
