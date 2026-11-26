@@ -46,6 +46,10 @@ For UI work with hot reload, run `npm run dev`: it starts Vite and the Worker to
 
 Responses go through the Workers Cache API and carry `Cache-Control` headers. Subjects are mapped to a fixed list in `shared/genres.ts`.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [AGENTS.md](AGENTS.md) for the rules every change follows, including those for coding agents. A plan for more media (comics, anime, movies) is in [docs/plan-media-environments.md](docs/plan-media-environments.md).
+
 ## Structure
 
 ```
