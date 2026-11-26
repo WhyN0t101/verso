@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import {buildDecor} from './decor';
+import {contactShadow, loadModel, type ModelName} from './assets';
 
 export interface RoomLayout {
   pitch: number;
@@ -56,37 +55,13 @@ function rugTexture(): THREE.CanvasTexture {
   });
 }
 
-/** A dusk landscape for the framed picture: sky, a low sun and three ridges. */
-function paintingTexture(): THREE.CanvasTexture {
-  return gradientTexture(160, 200, (g) => {
-    const sky = g.createLinearGradient(0, 0, 0, 200);
-    sky.addColorStop(0, '#4a5d86');
-    sky.addColorStop(0.55, '#d99a68');
-    sky.addColorStop(1, '#f0c78c');
-    g.fillStyle = sky;
-    g.fillRect(0, 0, 160, 200);
-    g.fillStyle = '#f6e2b0';
-    g.beginPath();
-    g.arc(110, 100, 16, 0, Math.PI * 2);
-    g.fill();
-    [['#6a5a6e', 118], ['#46506a', 136], ['#2b3550', 158]].forEach(([c, y], i) => {
-      g.fillStyle = c as string;
-      g.beginPath();
-      g.moveTo(0, 200);
-      for (let x = 0; x <= 160; x += 8) g.lineTo(x, (y as number) + Math.sin(x * 0.07 + i * 2) * (9 - i * 2));
-      g.lineTo(160, 200);
-      g.fill();
-    });
-  });
-}
-
 /**
  * Floor and wall lamps behind the bookcases. There is no wall mesh: the page background chosen in
  * the style dialog is the wall, so the room never hides it. The camera never leaves the wall's
  * extent, so the room is scenery, not something to navigate.
  *
- * With props on, an armchair on a rug stands left of the first bookcase and a side table with an old
- * lamp right of the last one.
+ * With props on, an armchair, a plant and a rug stand left of the first bookcase and a side table with an old
+ * lamp and a picture right of the last one. They are real models loaded on demand (see assets.ts).
  */
 export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; setProps(on: boolean): void} {
   const group = new THREE.Group();
@@ -123,144 +98,64 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
 
   /* ---------- props ---------- */
 
-  const leather = new THREE.MeshStandardMaterial({color: 0x6a341f, roughness: 0.55});
-  const cushion = new THREE.MeshStandardMaterial({color: 0x7d4327, roughness: 0.6});
-  // Photographed leather (CC0, see public/textures/CREDITS.md), fetched the first time the props are shown.
-  let leatherRequested = false;
-  function loadLeather(): void {
-    if (leatherRequested) return;
-    leatherRequested = true;
-    const loader = new THREE.TextureLoader();
-    void Promise.all([loader.loadAsync('/textures/leather_diff.jpg'), loader.loadAsync('/textures/leather_nor.jpg')])
-      .then(([map, normal]) => {
-        for (const t of [map, normal]) {
-          t.wrapS = t.wrapT = THREE.RepeatWrapping;
-          t.repeat.set(2, 2);
-        }
-        map.colorSpace = THREE.SRGBColorSpace;
-        for (const [m, tint] of [[leather, 0xffffff], [cushion, 0xffe3d0]] as const) {
-          m.map = map;
-          m.normalMap = normal;
-          m.normalScale.set(0.8, 0.8);
-          m.color.setHex(tint);
-          m.needsUpdate = true;
-        }
-      })
-      .catch((err: unknown) => console.warn('leather photo unavailable', err));
-  }
-  const darkWood = new THREE.MeshStandardMaterial({color: 0x2b1a10, roughness: 0.6});
-  const tableWood = new THREE.MeshStandardMaterial({color: 0x4f2f1a, roughness: 0.5});
-  const brass = new THREE.MeshStandardMaterial({color: 0xc19a4b, roughness: 0.35, metalness: 0.7});
-  const shadeMat = new THREE.MeshStandardMaterial({color: 0xd9b074, emissive: 0xffa94a, emissiveIntensity: 0.95, roughness: 0.9, side: THREE.DoubleSide});
   const rugMat = new THREE.MeshStandardMaterial({map: rugTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
-  const stackMats = [0x3b4a6b, 0x7a3b2e, 0x4f6b48].map((color) => new THREE.MeshStandardMaterial({color, roughness: 0.7}));
-  const decorMat = new THREE.MeshStandardMaterial({vertexColors: true, roughness: 0.6});
-  const gilt = new THREE.MeshStandardMaterial({color: 0x8a6a2f, roughness: 0.4, metalness: 0.5});
-  const paintingMat = new THREE.MeshStandardMaterial({map: paintingTexture(), roughness: 0.9});
   const lampLight = new THREE.PointLight(0xffc27a, 0, 16, 2);
   props.add(lampLight);
   // A table lamp lights the shelf beside it, not the whole wall.
   const LAMP_INTENSITY = 26;
 
-  const part = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, into: THREE.Object3D): THREE.Mesh => {
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
-    into.add(m);
-    return m;
-  };
-  const soft = (w: number, h: number, d: number): THREE.BufferGeometry => new RoundedBoxGeometry(w, h, d, 3, Math.min(w, h, d) * 0.28);
-
-  /** A leather wing-less armchair, about a metre high at this scale, standing on the floor at the origin and facing +z. */
-  function armchair(): THREE.Group {
-    const g = new THREE.Group();
-    for (const [x, z] of [[-1.3, -1.1], [1.3, -1.1], [-1.3, 1.1], [1.3, 1.1]] as const) part(new THREE.CylinderGeometry(0.09, 0.07, 0.5, 10), darkWood, x, 0.25, z, g);
-    part(soft(3.2, 0.5, 3.0), leather, 0, 0.75, 0, g);
-    part(soft(2.4, 0.5, 2.3), cushion, 0, 1.25, 0.25, g);
-    part(soft(3.2, 3.1, 0.7), leather, 0, 2.3, -1.15, g);
-    const back = part(soft(2.3, 1.9, 0.55), cushion, 0, 2.35, -0.7, g);
-    back.rotation.x = -0.14;
-    for (const x of [-1.3, 1.3]) part(soft(0.65, 1.55, 2.9), leather, x, 1.6, 0.05, g);
-    return g;
-  }
-
-  /** A pedestal table with an old brass lamp and a few books on it. Returns the world height of the shade centre. */
-  function tableWithLamp(g: THREE.Group): number {
-    const topY = 2.4;
-    part(new THREE.CylinderGeometry(1.25, 1.25, 0.12, 32), tableWood, 0, topY, 0, g);
-    part(new THREE.CylinderGeometry(0.13, 0.17, topY - 0.12, 12), tableWood, 0, (topY - 0.12) / 2, 0, g);
-    part(new THREE.CylinderGeometry(0.75, 0.85, 0.12, 24), tableWood, 0, 0.06, 0, g);
-    // The old lamp: heavy base, a thin stem, and a flared shade.
-    part(new THREE.CylinderGeometry(0.3, 0.42, 0.28, 20), brass, 0.35, topY + 0.2, -0.1, g);
-    part(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 10), brass, 0.35, topY + 0.9, -0.1, g);
-    const shadeY = topY + 1.75;
-    part(new THREE.CylinderGeometry(0.5, 0.95, 0.95, 28, 1, true), shadeMat, 0.35, shadeY, -0.1, g);
-    const halo = new THREE.Sprite(glowMat);
-    halo.scale.set(5.2, 5.2, 1);
-    halo.position.set(0.35, shadeY, -0.1);
-    g.add(halo);
-    // Three books lying on the table.
-    stackMats.forEach((mat, i) => {
-      const b = part(new THREE.BoxGeometry(0.95 - i * 0.08, 0.2, 0.65 - i * 0.05), mat, -0.55, topY + 0.16 + i * 0.2, 0.25, g);
-      b.rotation.y = 0.3 - i * 0.22;
-    });
-    return shadeY;
-  }
+  let layoutNow: RoomLayout | null = null;
+  let propsOn = false;
+  /** Bumped on every rebuild, so a model that arrives after the props were switched off or moved is dropped. */
+  let buildId = 0;
 
   function clearProps(): void {
     for (const m of props.children.slice()) {
-      m.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
-      if (m !== lampLight) props.remove(m);
+      if (m === lampLight) continue;
+      // Model copies share geometry and materials with each other; only the rug plane is ours to free.
+      if ((m as THREE.Mesh).isMesh && !m.userData.keep) (m as THREE.Mesh).geometry.dispose();
+      props.remove(m);
     }
     lampLight.intensity = 0;
   }
 
-  let layoutNow: RoomLayout | null = null;
-  let propsOn = false;
-
   function buildProps(): void {
     clearProps();
+    const id = ++buildId;
     if (!propsOn || !layoutNow) return;
-    loadLeather();
     const {pitch, count, floorY} = layoutNow;
-    const span = (count - 1) * pitch;
-    const rug = part(new THREE.PlaneGeometry(8.2, 6.2), rugMat, 0, floorY + 0.02, 0, props);
-    rug.rotation.x = -Math.PI / 2;
-    rug.position.set(-(pitch / 2 + 4.3), floorY + 0.02, 0.9);
-    const chair = armchair();
-    chair.position.set(-(pitch / 2 + 4.3), floorY, 0.2);
-    chair.rotation.y = 0.5;
-    props.add(chair);
-    const table = new THREE.Group();
-    table.position.set(span + pitch / 2 + 3.2, floorY, 0.2);
-    props.add(table);
-    const shadeY = tableWithLamp(table);
-    lampLight.position.set(table.position.x + 0.35, floorY + shadeY, table.position.z - 0.1);
-    lampLight.updateMatrix();
-    lampLight.intensity = LAMP_INTENSITY;
     const chairX = -(pitch / 2 + 4.3);
-    // A big pot by the armchair, and a floor lamp between the chair and the bookcase.
-    const pot = part(buildDecor('plant'), decorMat, chairX - 2.7, floorY, 0.2, props);
-    pot.scale.setScalar(2.3);
-    const lamp = new THREE.Group();
-    lamp.position.set(-(pitch / 2 + 1.7), floorY, -0.1);
-    part(new THREE.CylinderGeometry(0.5, 0.55, 0.12, 20), brass, 0, 0.06, 0, lamp);
-    part(new THREE.CylinderGeometry(0.05, 0.05, 5.4, 8), brass, 0, 2.8, 0, lamp);
-    part(new THREE.CylinderGeometry(0.55, 1.0, 1.1, 24, 1, true), shadeMat, 0, 5.7, 0, lamp);
-    const lampHalo = new THREE.Sprite(glowMat);
-    lampHalo.scale.set(5.5, 5.5, 1);
-    lampHalo.position.set(0, 5.7, 0);
-    lamp.add(lampHalo);
-    props.add(lamp);
-    // A framed picture leaning on the floor beside the table.
-    const picture = new THREE.Group();
-    picture.position.set(table.position.x + 2.9, floorY + 1.45, -0.2);
-    picture.rotation.x = -0.1;
-    part(new THREE.BoxGeometry(2.3, 2.9, 0.14), gilt, 0, 0, 0, picture);
-    part(new THREE.PlaneGeometry(1.9, 2.5), paintingMat, 0, 0, 0.075, picture);
-    props.add(picture);
-    // Nothing here moves, so the transforms are fixed once.
-    props.updateMatrixWorld(true);
-    props.traverse((o) => (o.matrixAutoUpdate = false));
+    const tableX = (count - 1) * pitch + pitch / 2 + 2.3;
+    const topY = floorY + 2.3;
+    const rug = new THREE.Mesh(new THREE.PlaneGeometry(8.2, 6.2), rugMat);
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.set(chairX, floorY + 0.02, 0.9);
+    props.add(rug);
+    const add = (name: ModelName, height: number, x: number, y: number, z: number, turn: number): void => {
+      loadModel(name, height).then(
+        (m) => {
+          if (id !== buildId) return;
+          m.position.set(x, y, z);
+          m.rotation.y = turn;
+          props.add(m);
+        },
+        (err: unknown) => console.warn(`model ${name} unavailable`, err),
+      );
+    };
+    add('armchair', 3.7, chairX, floorY, 0.2, 0.5);
+    add('plant', 2.3, chairX - 2.6, floorY, 0.3, 0);
+    add('table', 2.3, tableX, floorY, 0.2, 0);
+    add('lamp', 2.0, tableX + 0.3, topY, 0.1, 0);
+    add('picture', 1.0, tableX - 0.6, topY, 0.5, 0.3);
+    for (const [w, d, x, y, z] of [[4.6, 3.6, chairX, floorY, 0.3], [2.6, 2.2, chairX - 2.6, floorY, 0.3], [2.9, 2.9, tableX, floorY, 0.2], [1.3, 1.3, tableX + 0.3, topY, 0.1], [1.1, 0.9, tableX - 0.6, topY, 0.5]] as const) props.add(contactShadow(w, d, x, y + 0.03, z));
+    // The flame sits about two thirds up the lamp: the light and its halo are put there.
+    const flame = new THREE.Vector3(tableX + 0.35, topY + 1.3, 0.1);
+    lampLight.position.copy(flame);
+    lampLight.intensity = LAMP_INTENSITY;
+    const halo = new THREE.Sprite(glowMat);
+    halo.scale.set(5, 5, 1);
+    halo.position.copy(flame);
+    props.add(halo);
   }
 
   return {

@@ -9,7 +9,7 @@ import {LIGHTS, WOODS, type WoodPreset} from '../presets';
 import {SERIF, bookKind, drawCover, pagesCanvas, paletteOf, sat, spineCanvas, spineLook, type BookKind} from '../textures/draw';
 import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
-import {DECOR_KINDS, DECOR_WIDTH, buildDecor} from './decor';
+import {contactShadow, loadModel, type ModelName} from './assets';
 import {tintFor} from './tint';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
@@ -90,6 +90,13 @@ const BINDING: Record<BookKind, {radius: number; gloss: number}> = {
 };
 /** Objects standing on the free end of a shelf: at most this many per bookcase. */
 const MAX_DECOR = 3;
+/** What stands on a shelf, and how tall in world units. Real models, loaded on demand. */
+const DECOR: {name: ModelName; height: number}[] = [
+  {name: 'vase', height: 1.2},
+  {name: 'plant', height: 1.3},
+];
+/** Free width a shelf needs beside its last book for one of them. */
+const DECOR_WIDTH = 0.9;
 /** A book may stand this far out of line with its row, so spines are not a ruled edge. */
 const MAX_PULL = 0.09;
 const MAX_LEAN = 0.14;
@@ -209,7 +216,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let wood = woodTexture(WOODS.walnut);
   const woodMat = new THREE.MeshStandardMaterial({map: wood, bumpMap: wood, bumpScale: 0.8, roughness: 0.72, metalness: 0});
   const backMat = new THREE.MeshStandardMaterial({map: wood, color: 0x7a6050, roughness: 0.9});
-  const decorMat = new THREE.MeshStandardMaterial({vertexColors: true, roughness: 0.6});
   const pagesTex = new THREE.CanvasTexture(pagesCanvas());
   pagesTex.colorSpace = THREE.SRGBColorSpace;
   pagesTex.anisotropy = maxAniso;
@@ -247,7 +253,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       }
       map.colorSpace = THREE.SRGBColorSpace;
       photo = {map, normal, mean: meanColor(map.image as CanvasImageSource)};
-      woodMat.normalScale.set(0.7, 0.7);
+      woodMat.normalScale.set(1.4, 1.4);
       applySettings();
     })
     .catch((err: unknown) => console.warn('wood photo unavailable', err));
@@ -289,7 +295,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   const frame = new THREE.Group();
   const bookRoot = new THREE.Group();
-  scene.add(frame, bookRoot);
+  /** Shelf objects: copies of shared models, so clearing them frees nothing. */
+  const decorRoot = new THREE.Group();
+  let shelfBuild = 0;
+  scene.add(frame, bookRoot, decorRoot);
 
   let bucket = -1;
   let innerW = 4.2;
@@ -586,6 +595,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
 
   function buildShelf(): void {
+    const build = ++shelfBuild;
+    decorRoot.clear();
     force = true;
     filterKey = '';
     renderer.shadowMap.needsUpdate = true;
@@ -630,18 +641,29 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         const shelf = baseY + BOARD + (rows - 1 - bk.row) * ROW_H;
         frame.add(box(0.05, 1.1, 0.8, woodMat, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
       }
-      // A plant, globe, candle or clock where a shelf has room beside its last book. Seeded by the case, so they stay put.
+      // A vase or plant where a shelf has room beside its last book. Seeded by the case, so they stay put.
       const choose = rng(hash('decor' + c.index));
       let placed = 0;
       c.rows.forEach((row, k) => {
         if (choose() > 0.55 || placed >= MAX_DECOR) return;
         const last = row[row.length - 1];
         if (innerW - (last ? last.x + last.b.w : 0) < DECOR_WIDTH + 0.8) return;
-        const piece = new THREE.Mesh(buildDecor(DECOR_KINDS[Math.floor(choose() * DECOR_KINDS.length)] ?? 'plant'), decorMat);
-        piece.position.set(ox + innerW / 2 - 0.6, baseY + BOARD + (rows - 1 - k) * ROW_H, -DEPTH / 2 + 0.65);
-        piece.rotation.y = (choose() - 0.5) * 0.5;
-        piece.castShadow = piece.receiveShadow = true;
-        frame.add(piece);
+        const kind = DECOR[Math.floor(choose() * DECOR.length)] ?? DECOR[0];
+        const x = ox + innerW / 2 - 0.6;
+        const y = baseY + BOARD + (rows - 1 - k) * ROW_H;
+        const turn = (choose() - 0.5) * 0.9;
+        if (kind) {
+          loadModel(kind.name, kind.height).then(
+            (m) => {
+              if (build !== shelfBuild) return;
+              m.position.set(x, y, -DEPTH / 2 + 0.65);
+              m.rotation.y = turn;
+              decorRoot.add(m, contactShadow(kind.height * 0.8, kind.height * 0.8, m.position.x, y + 0.02, m.position.z));
+              force = true;
+            },
+            (err: unknown) => console.warn(`model ${kind.name} unavailable`, err),
+          );
+        }
         placed++;
       });
       const top = baseY + Hc + FASCIA_H + CORNICE_H;

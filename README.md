@@ -52,7 +52,7 @@ Responses go through the Workers Cache API and carry `Cache-Control` headers. Su
 shared/         genre list and mapping, used by the Worker and the app
 src/worker.ts   Cloudflare Worker: /api/search and /api/cover
 src/data/       book model, storage, settings, backup/import
-src/scene/      Three.js wall: wall.ts (pure layout and camera targeting), shelf.ts, room.ts (floor and lamps)
+src/scene/      Three.js wall: wall.ts (pure layout and camera targeting), shelf.ts, room.ts (floor, lamps, props), assets.ts (glTF loader)
 src/textures/   canvas drawing for spines and generated covers
 src/export/     export card drawing
 src/ui/         panel, add/edit form, export dialog, style dialog, list view
