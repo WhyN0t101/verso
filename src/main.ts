@@ -16,7 +16,8 @@ import {removeBooks, restoreBooks} from './data/bulk';
 import {createToneQueue} from './toneQueue';
 import {dominantTone, loadCover} from './covers';
 import {initStyle, openStyle, closeStyle, applyBackground, applyStudy} from './ui/style';
-import {buildBackup, mergeBooks, parseBackup} from './data/backup';
+import {STORAGE_KEY} from './data/storage';
+import {buildBackup,mergeBooks, parseBackup} from './data/backup';
 
 await fontsReady;
 
@@ -309,6 +310,11 @@ addEventListener('keydown', (ev) => {
     state.q = '';
     if (listMode) renderList(activate);
   }
+});
+
+// Every save writes the whole shelf, so a tab that kept editing would erase what another tab saved.
+addEventListener('storage', (ev) => {
+  if (ev.key === STORAGE_KEY) toastAction('The shelf was changed in another tab.', 'Reload', () => location.reload(), 60_000);
 });
 
 // The hint teaches the gesture once; any first interaction retires it for good.

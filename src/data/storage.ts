@@ -3,7 +3,8 @@ import {sanitizeBook, makeBook} from './books';
 import {SEED} from './seed';
 import {sanitizeSettings, DEFAULT_SETTINGS} from './settings';
 
-const KEY = 'verso.v1';
+export const STORAGE_KEY = 'verso.v1';
+const KEY = STORAGE_KEY;
 const LEGACY_KEY = 'myshelf.v1';
 
 export interface Stored {
