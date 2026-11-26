@@ -18,7 +18,6 @@ src/textures/   canvas drawing for spines and generated covers
 src/export/     share card drawing
 src/ui/         panel, form, export dialog, style dialog, list view
 tests/          Vitest unit tests
-prototype/      legacy single-file prototype, reference only
 ```
 
 ## Run
