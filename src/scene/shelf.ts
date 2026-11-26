@@ -145,7 +145,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     console.warn('WebGL unavailable', err);
     return null;
   }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // Phones have the densest screens and the weakest GPUs; 1.5 is sharp enough for a shelf.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile() ? 1.5 : 2));
   // Filmic tone mapping that keeps hues: lamp light rolls off into highlights instead of clipping flat.
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
@@ -321,6 +322,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let wall: Wall = layoutWall([], 4.2, false);
   let shadowCase = -1;
   let viewKey = '';
+  /** What the jump list shows, rebuilt with the wall, so a frame only compares two strings. */
+  let sectionsKey = '';
   let hover: string | null = null;
   let visible = true;
   const entries = new Map<string, Entry>();
@@ -612,6 +615,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const keepCase = nearestCase(panTarget, pitch, wall.cases.length);
     innerW = WIDTHS[bucket < 0 ? 1 : bucket] ?? 4.2;
     wall = layoutWall(state.books, innerW, !!state.settings.groupByGenre);
+    sectionsKey = wall.sections.map((x) => `${x.name}:${x.count}:${x.firstCase}:${x.contains?.length ?? 0}`).join(',');
     Hs = CASE_ROWS * ROW_H + BOARD;
     Wtot = innerW + 2 * SIDE;
     const oldPitch = pitch;
@@ -770,7 +774,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   /** Tells the page what the wall holds and where the camera is heading; only when that changed. */
   function emitView(): void {
     const target = nearestCase(panTarget, pitch, wall.cases.length);
-    const vk = `${target}|${wall.sections.map((x) => `${x.name}:${x.count}:${x.firstCase}:${x.contains?.length ?? 0}`).join(',')}`;
+    const vk = `${target}|${sectionsKey}`;
     if (vk === viewKey) return;
     viewKey = vk;
     const parts = wall.cases[target]?.sections ?? [];
@@ -900,10 +904,27 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   /* ---------- loop ---------- */
   const tmpC = new THREE.Color();
   let last = performance.now();
+  /** Gives a spine back its flat colour and frees its texture, once its bookcase is far from the camera. */
+  function evictSpine(e: Entry): void {
+    const m = e.mats[MAT.spine];
+    const k = `${e.b.id}:${e.b.v}:spine`;
+    texCache.get(k)?.dispose();
+    texCache.delete(k);
+    if (m) {
+      m.map = null;
+      m.needsUpdate = true;
+      e.base[MAT.spine]?.copy(faceColors(e.b)[2]);
+      m.color.copy(e.base[MAT.spine] as THREE.Color).multiply(e.tint);
+    }
+    e.hasSpine = false;
+  }
+  let sweep = 0;
   function lazyTextures(sel: Entry | undefined): void {
     if (sel && !sel.hasCover) applyCover(sel);
     // Only books in bookcases near the camera get a spine texture, a few per frame, so 100+ books do not stall startup.
     const reach = camDist * FOV_T * camera.aspect + pitch * 0.6;
+    // Every couple of seconds, spines far beyond the view are released, so panning a big wall does not keep them all in memory.
+    if (++sweep % 120 === 0) for (const e of entries.values()) if (e.hasSpine && e !== sel && Math.abs(caseX(e.caseIndex, pitch) - panCur) > reach * 3) evictSpine(e);
     let budget = 6;
     for (const e of entries.values()) {
       if (e.hasSpine || Math.abs(caseX(e.caseIndex, pitch) - panCur) > reach) continue;
@@ -1024,7 +1045,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const nx = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.rotation.z + e.grp.scale.x;
       if (Math.abs(nx - ox) > 1e-5) {
         moved++;
-        shadowDirty = true;
+        // A hover or search lift is too small to be worth redrawing every book into the shadow map.
+        if (isSel) shadowDirty = true;
       }
       const tint = tintFor({isSelected: isSel, anySelected: !!sel, filtering, matches: match});
       tmpC.setHex(tint);

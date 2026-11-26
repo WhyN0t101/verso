@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
-import {MeshoptDecoder} from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 /** Optimised CC0 models in public/models (see CREDITS.md there): meshopt-compressed, 512 to 1024 px WebP textures. */
 export type ModelName = 'armchair' | 'table' | 'lamp' | 'plant' | 'picture' | 'painting' | 'vase';
@@ -21,7 +19,11 @@ function grade(root: THREE.Object3D): void {
   });
 }
 
-const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+/** The glTF loader and its mesh decoder are their own chunk, fetched with the first model instead of with the page. */
+const loader = import('three/examples/jsm/loaders/GLTFLoader.js').then(async ({GLTFLoader}) => {
+  const {MeshoptDecoder} = await import('three/examples/jsm/libs/meshopt_decoder.module.js');
+  return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+});
 const loaded = new Map<ModelName, Promise<THREE.Object3D>>();
 
 /**
@@ -32,7 +34,7 @@ const loaded = new Map<ModelName, Promise<THREE.Object3D>>();
 export async function loadModel(name: ModelName, height: number): Promise<THREE.Group> {
   let source = loaded.get(name);
   if (!source) {
-    source = loader.loadAsync(`/models/${name}.glb`).then((gltf) => {
+    source = loader.then((l) => l.loadAsync(`/models/${name}.glb`)).then((gltf) => {
       grade(gltf.scene);
       return gltf.scene;
     });
