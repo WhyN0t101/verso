@@ -1,5 +1,5 @@
 import type {Book} from '../types';
-import {accOf, paletteOf, sat} from '../textures/draw';
+import {paletteOf, sat} from '../textures/draw';
 import {contrastRatio, hslToRgb, luminance} from '../textures/contrast';
 import {clamp, hsl} from '../util';
 
@@ -45,7 +45,8 @@ export const THEMES: Theme[] = [
     label: 'Classic',
     ink: '#f6ead4',
     mute: 'rgba(246,234,212,.74)',
-    accent: accOf,
+    // Lighter than the spine accent: it must read as text on the glow behind the header.
+    accent: (b) => hsl((paletteOf(b).h + 28) % 360, 60, 86),
     shadow: 60,
     paint(g, W, H, b) {
       const p = paletteOf(b);
@@ -63,7 +64,7 @@ export const THEMES: Theme[] = [
     label: 'Paper',
     ink: '#2a2118',
     mute: 'rgba(42,33,24,.72)',
-    accent: (b) => hsl(paletteOf(b).h, 45, 32),
+    accent: (b) => hsl(paletteOf(b).h, 50, 22),
     shadow: 34,
     paint(g, W, H) {
       vertical(g, H, '#f6eedf', '#e8dcc3');
