@@ -75,15 +75,17 @@ function resetDelete(): void {
 export function initPanel(h: PanelHooks): void {
   hooks = h;
   $('close').addEventListener('click', h.onClose);
-  $('pNotes').addEventListener('input', (ev) => {
+  const notes = $<HTMLTextAreaElement>('pNotes');
+  notes.addEventListener('input', () => {
     if (!current) return;
-    current.notes = (ev.target as HTMLTextAreaElement).value;
+    current.notes = notes.value;
     clearTimeout(saveTimer);
     saveTimer = window.setTimeout(h.onChange, 300);
   });
-  $('pFinished').addEventListener('change', (ev) => {
+  const finished = $<HTMLInputElement>('pFinished');
+  finished.addEventListener('change', () => {
     if (!current || current.status !== 'finished') return;
-    const date = isoDate((ev.target as HTMLInputElement).value);
+    const date = isoDate(finished.value);
     if (date) current.finishedOn = date;
     else delete current.finishedOn;
     h.onChange();

@@ -229,10 +229,10 @@ $('exportBackup').addEventListener('click', () => {
   toast(`Backed up ${state.books.length} books.`);
 });
 $('importBackup').addEventListener('click', () => $('importFile').click());
-$<HTMLInputElement>('importFile').addEventListener('change', async (ev) => {
-  const input = ev.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = '';
+const importFile = $<HTMLInputElement>('importFile');
+importFile.addEventListener('change', async () => {
+  const file = importFile.files?.[0];
+  importFile.value = '';
   if (!file) return;
   try {
     const parsed = parseBackup(await file.text());
@@ -268,8 +268,9 @@ function filterChanged(): void {
   shelf?.revealMatch();
 }
 
-$('q').addEventListener('input', (ev) => {
-  state.q = (ev.target as HTMLInputElement).value.trim().toLowerCase();
+const search = $<HTMLInputElement>('q');
+search.addEventListener('input', () => {
+  state.q = search.value.trim().toLowerCase();
   filterChanged();
 });
 function renderStatusChips(): void {
@@ -309,7 +310,7 @@ $('q').addEventListener('keydown', (ev) => {
   if (!first) return;
   shelf?.focusBook(first.id);
   activate(first.id);
-  (ev.target as HTMLElement).blur();
+  search.blur();
 });
 
 addEventListener('keydown', (ev) => {

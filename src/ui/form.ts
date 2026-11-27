@@ -187,8 +187,9 @@ async function lookupSummary(r: SearchResult): Promise<void> {
 export function initForm(onSave: (draft: BookDraft, editingId: string | null) => void): void {
   onSaveCb = onSave;
 
-  $('fSearch').addEventListener('input', (ev) => {
-    const q = (ev.target as HTMLInputElement).value.trim();
+  const search = f('fSearch');
+  search.addEventListener('input', () => {
+    const q = search.value.trim();
     clearTimeout(searchTimer);
     if (q.length < 2) {
       searchCtl?.abort();

@@ -2,11 +2,12 @@ import type {Book} from '../types';
 import {state} from '../state';
 import {$, downloadBlob, slug} from '../util';
 import {drawCard, type CardFormat} from '../export/card';
-import {THEMES, type ThemeId} from '../export/themes';
+import {THEMES} from '../export/themes';
 import {fontsReady} from '../fonts';
 import {largeCover, loadCover} from '../covers';
 import {createCardSlot} from './cardSlot';
 
+const FORMATS: readonly CardFormat[] = ['post', 'story', 'square'];
 const HELP = 'If a download is blocked here, press and hold the image (or right click it) and choose Save image.';
 let book: Book | null = null;
 const slot = createCardSlot();
@@ -70,17 +71,19 @@ export function initExport(): void {
     themes.appendChild(btn);
   }
   themes.addEventListener('click', (ev) => {
-    const id = (ev.target as HTMLElement).dataset.theme as ThemeId | undefined;
+    const key = ev.target instanceof HTMLElement ? ev.target.dataset.theme : undefined;
+    const id = THEMES.find((t) => t.id === key)?.id;
     if (!id) return;
     state.theme = id;
-    [...themes.children].forEach((el) => el.classList.toggle('on', (el as HTMLElement).dataset.theme === id));
+    for (const el of themes.children) el.classList.toggle('on', el instanceof HTMLElement && el.dataset.theme === id);
     void render();
   });
   $('exSeg').addEventListener('click', (ev) => {
-    const fmt = (ev.target as HTMLElement).dataset.fmt as CardFormat | undefined;
+    const key = ev.target instanceof HTMLElement ? ev.target.dataset.fmt : undefined;
+    const fmt = FORMATS.find((f) => f === key);
     if (!fmt) return;
     state.fmt = fmt;
-    [...$('exSeg').children].forEach((el) => el.classList.toggle('on', (el as HTMLElement).dataset.fmt === fmt));
+    for (const el of $('exSeg').children) el.classList.toggle('on', el instanceof HTMLElement && el.dataset.fmt === fmt);
     void render();
   });
   $('exClose').addEventListener('click', closeExport);
