@@ -297,7 +297,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     fillL.intensity = L.fill * LIGHT_UNIT;
     room.setProps(!!state.settings.props);
   }
-  const room = createRoom(scene);
+  const room = createRoom(scene, maxAniso);
   applySettings();
 
   const frame = new THREE.Group();

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {contactShadow, loadModel, type ModelName} from './assets';
+import {rng} from '../util';
 
 export interface RoomLayout {
   pitch: number;
@@ -23,35 +24,76 @@ function gradientTexture(w: number, h: number, paint: (g: CanvasRenderingContext
   return t;
 }
 
-/** A worn red rug: a field, a border and a faint lattice, enough to read as woven from the camera. */
+/** A worn red rug: a field, a border and a faint lattice, with woven grain, uneven wear and fringe at the ends. */
 function rugTexture(): THREE.CanvasTexture {
-  return gradientTexture(256, 192, (g) => {
-    g.fillStyle = '#5a1f1c';
-    g.fillRect(0, 0, 256, 192);
-    g.strokeStyle = '#c79a52';
-    g.lineWidth = 6;
-    g.strokeRect(10, 10, 236, 172);
-    g.strokeStyle = '#2f1110';
-    g.lineWidth = 3;
-    g.strokeRect(22, 22, 212, 148);
-    g.strokeStyle = 'rgba(199,154,82,.35)';
+  const W = 512;
+  const H = 384;
+  const FRINGE = 14;
+  return gradientTexture(W, H, (g) => {
+    g.fillStyle = '#a58f66';
+    g.fillRect(0, 0, W, H);
+    // Fringe: short tassels along the two short ends.
+    const tassel = rng(11);
+    g.strokeStyle = 'rgba(235,215,170,.5)';
     g.lineWidth = 1.5;
-    for (let i = -192; i < 256; i += 24) {
+    for (let y = 0; y < H; y += 3) {
+      for (const [x0, x1] of [[0, FRINGE], [W, W - FRINGE]] as const) {
+        g.beginPath();
+        g.moveTo(x0, y);
+        g.lineTo(x1, y + (tassel() - 0.5) * 3);
+        g.stroke();
+      }
+    }
+    g.save();
+    g.beginPath();
+    g.rect(FRINGE, 0, W - 2 * FRINGE, H);
+    g.clip();
+    g.fillStyle = '#5a1f1c';
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#c79a52';
+    g.lineWidth = 12;
+    g.strokeRect(24, 20, W - 48, H - 40);
+    g.strokeStyle = '#2f1110';
+    g.lineWidth = 6;
+    g.strokeRect(46, 42, W - 92, H - 84);
+    g.strokeStyle = 'rgba(199,154,82,.35)';
+    g.lineWidth = 3;
+    for (let i = -H; i < W; i += 48) {
       g.beginPath();
-      g.moveTo(i, 170);
-      g.lineTo(i + 148, 22);
-      g.moveTo(i + 148, 170);
-      g.lineTo(i, 22);
+      g.moveTo(i, H - 44);
+      g.lineTo(i + H - 88, 44);
+      g.moveTo(i + H - 88, H - 44);
+      g.lineTo(i, 44);
       g.stroke();
     }
     g.fillStyle = '#c79a52';
     g.beginPath();
-    g.arc(128, 96, 26, 0, Math.PI * 2);
+    g.arc(W / 2, H / 2, 52, 0, Math.PI * 2);
     g.fill();
     g.fillStyle = '#5a1f1c';
     g.beginPath();
-    g.arc(128, 96, 16, 0, Math.PI * 2);
+    g.arc(W / 2, H / 2, 32, 0, Math.PI * 2);
     g.fill();
+    // Weave: warp and weft threads, light and dark, a pixel apart.
+    const weave = rng(5);
+    for (let i = 0; i < 2600; i++) {
+      g.fillStyle = weave() < 0.5 ? 'rgba(255,225,170,.06)' : 'rgba(0,0,0,.09)';
+      if (weave() < 0.5) g.fillRect(weave() * W, weave() * H, 1.5, 6 + weave() * 14);
+      else g.fillRect(weave() * W, weave() * H, 6 + weave() * 14, 1.5);
+    }
+    // Wear: foot traffic has flattened and faded a few patches.
+    const wear = rng(9);
+    for (let i = 0; i < 6; i++) {
+      const x = wear() * W;
+      const y = wear() * H;
+      const r = 30 + wear() * 50;
+      const patch = g.createRadialGradient(x, y, 0, x, y, r);
+      patch.addColorStop(0, 'rgba(210,180,140,.16)');
+      patch.addColorStop(1, 'rgba(210,180,140,0)');
+      g.fillStyle = patch;
+      g.fillRect(x - r, y - r, 2 * r, 2 * r);
+    }
+    g.restore();
   });
 }
 
@@ -63,7 +105,7 @@ function rugTexture(): THREE.CanvasTexture {
  * With props on, an armchair, a plant and a rug stand left of the first bookcase and a side table with an old
  * lamp and a picture right of the last one. They are real models loaded on demand (see assets.ts).
  */
-export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; setProps(on: boolean): void} {
+export function createRoom(scene: THREE.Scene, anisotropy = 1): {layout(o: RoomLayout): void; setProps(on: boolean): void} {
   const group = new THREE.Group();
   const props = new THREE.Group();
   scene.add(group, props);
@@ -98,7 +140,10 @@ export function createRoom(scene: THREE.Scene): {layout(o: RoomLayout): void; se
 
   /* ---------- props ---------- */
 
-  const rugMat = new THREE.MeshStandardMaterial({map: rugTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
+  const rugMap = rugTexture();
+  // The rug is seen at a low angle; without anisotropic filtering its weave smears to grey.
+  rugMap.anisotropy = anisotropy;
+  const rugMat = new THREE.MeshStandardMaterial({map: rugMap, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
   const lampLight = new THREE.PointLight(0xffc27a, 0, 16, 2);
   props.add(lampLight);
   // A table lamp lights the shelf beside it, not the whole wall.
