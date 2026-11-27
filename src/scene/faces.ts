@@ -18,6 +18,7 @@ export function packBookFaces(g: THREE.BufferGeometry): void {
       const {start, count} = faces[f] as THREE.GeometryGroup;
       return a.array.slice(start * a.itemSize, (start + count) * a.itemSize);
     });
+    // Safe: `a.array.constructor` is the typed-array class of this very attribute, so the copy keeps its element type (Float32 for position, uv, normal).
     const packed = new (a.array.constructor as new (n: number) => typeof a.array)(parts.reduce((n, p) => n + p.length, 0));
     let at = 0;
     for (const p of parts) {
