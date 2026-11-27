@@ -5,10 +5,9 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type {Book} from '../types';
 import {state} from '../state';
 import {matches} from '../search';
-import {hash, hsl, rng} from '../util';
+import {hash, rng} from '../util';
 import {LIGHTS} from '../presets';
-import {SERIF, bookKind, drawCover, paletteOf, sat, spineCanvas, spineLook, type BookKind} from '../textures/draw';
-import {largeCover, loadCover} from '../covers';
+import {SERIF, bookKind, type BookKind} from '../textures/draw';
 import {createRoom} from './room';
 import {contactShadow, loadModel, type ModelName} from './assets';
 import {packBookFaces} from './faces';
@@ -16,6 +15,8 @@ import {layoutPlate} from './plate';
 import {tintFor} from './tint';
 import {boardGeo, createWood} from './wood';
 import {createPicking} from './picking';
+import {createBookTextures, faceColors} from './bookTextures';
+import {MAT, type Entry} from './entry';
 import {SETTLE_EPS, aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
 import {approach, createFrameLoop, ease, needsAnotherFrame} from './loop';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, type SectionInfo, type Wall} from './wall';
@@ -59,28 +60,6 @@ export interface Shelf {
   setVisible(on: boolean): void;
 }
 
-interface Entry {
-  b: Book;
-  grp: THREE.Group;
-  mats: THREE.MeshStandardMaterial[];
-  home: THREE.Vector3;
-  base: THREE.Color[];
-  tint: THREE.Color;
-  hasSpine: boolean;
-  hasCover: boolean;
-  /** Aborts the real cover's request when the book is put back before it arrived. */
-  coverCtl?: AbortController;
-  coverPending?: boolean;
-  caseIndex: number;
-  picked: boolean;
-  /** Resting tilt in radians; a book at the end of a half-empty row leans on its neighbour. */
-  lean: number;
-  /** Strength of the warm glow now on the book's faces. */
-  glow: number;
-  /** Result of the search and status filter, refreshed only when they change. */
-  match: boolean;
-}
-
 const ROW_H = 2.55;
 const BOARD = 0.16;
 const SIDE = 0.22;
@@ -112,14 +91,6 @@ const PLINTH_H = 0.3;
 const VIEW_MARGIN = 0.6;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
 const LIGHT_UNIT = Math.PI;
-const MAT = {cover: 0, back: 1, spine: 2} as const;
-// The cover face gets part of its brightness from the picture itself (emissive) so the lamp's warmth and
-// angle cannot wash it out: albedo * light + glow comes to about the picture's own brightness.
-const FACE_ALBEDO = 0.4;
-const FACE_GLOW = 0.72;
-/** Milliseconds per frame spent drawing spine textures; the nearest bookcase is done first. */
-const SPINE_BUDGET_MS = 8;
-
 
 export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf | null {
   let renderer: THREE.WebGLRenderer;
@@ -216,36 +187,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let visible = true;
   const entries = new Map<string, Entry>();
   const pickables: THREE.Mesh[] = [];
-  const texCache = new Map<string, THREE.Texture>();
-  /** Cover textures whose real image has been requested, so each is fetched once. */
-  const realCovers = new Set<string>();
   const pointer = {x: 0, y: 0, sx: 0, sy: 0};
+  const textures = createBookTextures({maxAniso, entries, dirty});
 
-
-  function getTex(b: Book, kind: 'spine' | 'cover'): THREE.Texture {
-    const k = `${b.id}:${b.v}:${kind}`;
-    const hit = texCache.get(k);
-    if (hit) return hit;
-    const cv = kind === 'spine' ? spineCanvas(b) : drawCover(b, Math.round(b.d * 260), Math.round(b.h * 260));
-    const t = new THREE.CanvasTexture(cv);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = maxAniso;
-    texCache.set(k, t);
-    return t;
-  }
-
-  /** Drop textures of deleted books and of old versions of edited ones. */
-  function pruneTextures(): void {
-    const live = new Set(state.books.map((b) => `${b.id}:${b.v}:`));
-    for (const [k, t] of texCache) {
-      const prefix = k.slice(0, k.lastIndexOf(':') + 1);
-      if (!live.has(prefix)) {
-        t.dispose();
-        texCache.delete(k);
-        realCovers.delete(k);
-      }
-    }
-  }
 
   function shadowed(geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh {
     const m = new THREE.Mesh(geo, mat);
@@ -342,149 +286,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     pickables.length = 0;
   }
 
-  function applySpine(e: Entry): void {
-    const m = e.mats[MAT.spine];
-    if (!m) return;
-    m.map = getTex(e.b, 'spine');
-    m.needsUpdate = true;
-    e.base[MAT.spine]?.set(0xffffff);
-    e.hasSpine = true;
-    dirty();
-  }
-  /** Puts a picture on a cover-face material, with the glow that keeps it true to the picture. */
-  function faceLook(m: THREE.MeshStandardMaterial, tex: THREE.Texture): void {
-    m.map = tex;
-    m.emissiveMap = tex;
-    m.emissive.setHex(0xffffff);
-    m.emissiveIntensity = FACE_GLOW;
-    m.needsUpdate = true;
-  }
-
-  /** The cover face only shows on the pulled-out book, so its texture is made on first selection. */
-  function applyCover(e: Entry): void {
-    const m = e.mats[MAT.cover];
-    if (!m) return;
-    faceLook(m, getTex(e.b, 'cover'));
-    e.base[MAT.cover]?.setScalar(FACE_ALBEDO);
-    e.hasCover = true;
-    dirty();
-    const b = e.b;
-    const k = `${b.id}:${b.v}:cover`;
-    if (!b.cover || realCovers.has(k)) return;
-    realCovers.add(k);
-    const ctl = (e.coverCtl = new AbortController());
-    e.coverPending = true;
-    // The generated cover shows immediately. The medium cover fades in over it, then the large one over that.
-    const show = (img: HTMLImageElement): void => {
-      if (!texCache.has(k) || entries.get(b.id) !== e) return;
-      const t = new THREE.Texture(img);
-      t.colorSpace = THREE.SRGBColorSpace;
-      // The cover is shown near its own size, so mipmaps would only cost a generation pass on upload.
-      t.generateMipmaps = false;
-      t.minFilter = THREE.LinearFilter;
-      t.needsUpdate = true;
-      const previous = texCache.get(k);
-      texCache.set(k, t);
-      startFade(e, t, previous);
-    };
-    void loadCover(b.cover, {signal: ctl.signal})
-      .then((img) => {
-        if (img) show(img);
-        // The large cover waits for the medium fade to end, so two texture uploads never land in one frame.
-        return new Promise<void>((done) => setTimeout(done, FADE_S * 1000 + 100)).then(() => loadCover(largeCover(b.cover as string), {signal: ctl.signal}));
-      })
-      .then((img) => {
-        if (img) show(img);
-      })
-      .finally(() => {
-        e.coverPending = false;
-      });
-  }
-
-  /** Flat colours of the cover, back board and spine before (or without) a texture. */
-  const faceColors = (b: Book): [THREE.Color, THREE.Color, THREE.Color] => {
-    const p = paletteOf(b);
-    const spine = spineLook(b);
-    return [new THREE.Color(hsl(p.h, sat(p, 0), 28)), new THREE.Color(hsl(p.h, sat(p, 0), 22)), new THREE.Color(hsl(spine.h, spine.s, spine.l))];
-  };
-
-  function retone(b: Book): void {
-    const e = entries.get(b.id);
-    if (!e) return;
-    const prefix = `${b.id}:${b.v}:`;
-    for (const [k, t] of texCache) {
-      if (k.startsWith(prefix)) {
-        t.dispose();
-        texCache.delete(k);
-        realCovers.delete(k);
-      }
-    }
-    b.v++;
-    const [cover, back, spine] = faceColors(b);
-    e.base[MAT.cover]?.copy(cover);
-    e.base[MAT.back]?.copy(back);
-    e.base[MAT.spine]?.copy(spine);
-    for (const i of [MAT.cover, MAT.spine]) {
-      const m = e.mats[i];
-      if (m) {
-        m.map = null;
-        m.emissiveMap = null;
-        m.emissive.setHex(0x000000);
-        m.emissiveIntensity = 0;
-        m.needsUpdate = true;
-      }
-    }
-    e.hasSpine = false;
-    e.hasCover = false;
-    dirty();
-  }
-
-  interface Fade {
-    e: Entry;
-    plane: THREE.Mesh;
-    mat: THREE.MeshStandardMaterial;
-    tex: THREE.Texture;
-    generated: THREE.Texture | undefined;
-    t: number;
-  }
-  const fades = new Set<Fade>();
-  const FADE_S = 0.4;
-
-  function startFade(e: Entry, tex: THREE.Texture, generated: THREE.Texture | undefined): void {
-    // A newer cover arriving mid-fade: let the running one finish at once so two overlays never stack.
-    for (const f of [...fades]) if (f.e === e) endFade(f);
-    const host = e.grp.children[0] as THREE.Mesh;
-    const mat = new THREE.MeshStandardMaterial({map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: FACE_GLOW, roughness: 0.6, transparent: true, opacity: 0, depthWrite: false});
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(e.b.d, e.b.h), mat);
-    // Same orientation as the box's +x face, a hair in front of it.
-    plane.rotation.y = Math.PI / 2;
-    plane.position.x = e.b.w / 2 + 0.002;
-    host.add(plane);
-    fades.add({e, plane, mat, tex, generated, t: 0});
-    dirty();
-  }
-
-  function endFade(f: Fade): void {
-    fades.delete(f);
-    f.plane.parent?.remove(f.plane);
-    f.plane.geometry.dispose();
-    f.mat.dispose();
-    // The box face takes over the real texture; the generated one is no longer shown anywhere.
-    const m = f.e.mats[MAT.cover];
-    if (m && entries.get(f.e.b.id) === f.e) faceLook(m, f.tex);
-    f.generated?.dispose();
-    dirty();
-  }
-
-  /** Put back before its cover arrived: stop the request, and start over the next time it is picked. */
-  function cancelCover(e: Entry): void {
-    if (!e.coverPending) return;
-    e.coverPending = false;
-    e.coverCtl?.abort();
-    e.hasCover = false;
-    realCovers.delete(`${e.b.id}:${e.b.v}:cover`);
-  }
-
   function buildShelf(): void {
     const build = ++shelfBuild;
     decorRoot.clear();
@@ -495,7 +296,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     entries.forEach((e, id) => prev.set(id, {p: e.grp.position.clone(), r: e.grp.rotation.clone(), s: e.grp.scale.x}));
     clearFrame();
     clearBooks();
-    pruneTextures();
+    textures.prune(state.books);
     const keepCase = nearestCase(rig.panTarget, pitch, wall.cases.length);
     innerW = WIDTHS[bucket < 0 ? 1 : bucket] ?? 4.2;
     wall = layoutWall(state.books, innerW, !!state.settings.groupByGenre);
@@ -683,43 +484,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   /* ---------- loop ---------- */
   const tmpC = new THREE.Color();
-  /** Gives a spine back its flat colour and frees its texture, once its bookcase is far from the camera. */
-  function evictSpine(e: Entry): void {
-    const m = e.mats[MAT.spine];
-    const k = `${e.b.id}:${e.b.v}:spine`;
-    texCache.get(k)?.dispose();
-    texCache.delete(k);
-    if (m) {
-      m.map = null;
-      m.needsUpdate = true;
-      e.base[MAT.spine]?.copy(faceColors(e.b)[2]);
-      m.color.copy(e.base[MAT.spine] as THREE.Color).multiply(e.tint);
-    }
-    e.hasSpine = false;
-  }
-  let sweep = 0;
-  function lazyTextures(sel: Entry | undefined): void {
-    if (sel && !sel.hasCover) applyCover(sel);
-    // Only books in bookcases near the camera get a spine texture, within a time budget per frame, so 100+ books do not stall startup.
-    const reach = rig.dist * rig.fovT * camera.aspect + pitch * 0.6;
-    // Every couple of seconds, spines far beyond the view are released, so panning a big wall does not keep them all in memory.
-    if (++sweep % 120 === 0) for (const e of entries.values()) if (e.hasSpine && e !== sel && Math.abs(caseX(e.caseIndex, pitch) - rig.panCur) > reach * 3) evictSpine(e);
-    // Nearest bookcases first, so what is on screen gets its spine before what is merely close; a time budget keeps frames smooth.
-    // The list is only built while something is missing, so an idle shelf allocates nothing per frame.
-    let todo: {e: Entry; d: number}[] | null = null;
-    for (const e of entries.values()) {
-      const d = Math.abs(caseX(e.caseIndex, pitch) - rig.panCur);
-      if (e.hasSpine || d > reach) continue;
-      (todo ??= []).push({e, d});
-    }
-    if (!todo) return;
-    todo.sort((a, c) => a.d - c.d);
-    const start = performance.now();
-    for (const {e} of todo) {
-      applySpine(e);
-      if (performance.now() - start > SPINE_BUDGET_MS) break;
-    }
-  }
   /** One frame. Returns whether another is needed: false puts the loop to sleep until something wakes it. */
   function tick(): boolean {
     if (!visible) return false;
@@ -734,10 +498,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     moved += Math.abs(pointer.sx - px) + Math.abs(pointer.sy - py) + stepRig(rig, dt, wall.cases.length, pitch, framing);
     aimCamera(rig, pointer.sx, pointer.sy);
     const sel = state.sel ? entries.get(state.sel) : undefined;
-    if (prevSel && prevSel !== sel) cancelCover(prevSel);
+    if (prevSel && prevSel !== sel) textures.cancelCover(prevSel);
     prevSel = sel;
     const st = sel ? selectionTarget(rig, sel.b.h, sel.b.d) : null;
-    lazyTextures(sel);
+    textures.update(sel, rig.dist, rig.fovT, camera.aspect, pitch, rig.panCur);
     const near = nearestCase(rig.panCur, pitch, wall.cases.length);
     if (near !== shadowCase) {
       shadowCase = near;
@@ -829,15 +593,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       moved++;
       for (let i = 0; i < e.mats.length; i++) e.mats[i]?.color.copy(e.base[i] as THREE.Color).multiply(e.tint);
     });
-    for (const f of fades) {
-      f.t += dt / FADE_S;
-      f.mat.opacity = Math.min(f.t, 1);
-      f.mat.color.copy(f.e.base[MAT.cover] ?? f.e.tint).multiply(f.e.tint);
-      moved++;
-      if (f.t >= 1 || entries.get(f.e.b.id) !== f.e) endFade(f);
-    }
+    const fading = textures.stepFades(dt);
+    moved += fading;
     // An idle shelf costs nothing: draw only while something is still easing or was just changed, then sleep.
-    if (!needsAnotherFrame({moved, forced: force, fades: fades.size})) return false;
+    if (!needsAnotherFrame({moved, forced: force, fades: fading})) return false;
     force = false;
     if (shadowDirty) {
       renderer.shadowMap.needsUpdate = true;
@@ -896,7 +655,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       if (c !== undefined) rig.panTarget = caseX(c, pitch);
       wake();
     },
-    retone,
+    retone(b) {
+      const e = entries.get(b.id);
+      if (e) textures.retone(e);
+    },
     focusCase(index) {
       rig.panTarget = caseX(clampCase(index, wall.cases.length), pitch);
       wake();
