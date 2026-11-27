@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {isFarSpine, spineReach, spinesToDraw, staleKeys, textureKey} from '../src/scene/bookTextures';
+import {farSpines, isFarSpine, spineReach, sweepDue, spinesToDraw, staleKeys, textureKey} from '../src/scene/bookTextures';
 import type {Book} from '../src/types';
 
 const book = (id: string, v: number) => ({id, v}) as Book;
@@ -40,5 +40,24 @@ describe('spine selection', () => {
     expect(spineReach(20, 0.35, 1.6, 5)).toBeGreaterThan(spineReach(10, 0.35, 1.6, 5));
     expect(isFarSpine(0, 5, 20, 6)).toBe(true);
     expect(isFarSpine(0, 5, 17, 6)).toBe(false);
+  });
+});
+
+describe('releasing far spines', () => {
+  const e = (caseIndex: number, hasSpine = true) => ({caseIndex, hasSpine});
+
+  it('picks drawn spines more than three reaches from the camera, never the open book, never undrawn ones', () => {
+    const near = e(0);
+    const far = e(9);
+    const open = e(9);
+    const undrawn = e(9, false);
+    expect(farSpines([near, far, open, undrawn], open, 5, 0, 6)).toEqual([far]);
+    expect(farSpines([near], undefined, 5, 0, 6)).toEqual([]);
+  });
+
+  it('is due by time, not by frames, so a loop that sleeps between interactions still sweeps', () => {
+    expect(sweepDue(1000, 0, 2000)).toBe(false);
+    expect(sweepDue(2000, 0, 2000)).toBe(true);
+    expect(sweepDue(5000, 3000, 2000)).toBe(true);
   });
 });

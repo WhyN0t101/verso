@@ -281,7 +281,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const fading = textures.stepFades(dt);
     moved += fading;
     // An idle shelf costs nothing: draw only while something is still easing or was just changed, then sleep.
-    if (!needsAnotherFrame({moved, forced: force, fades: fading})) return false;
+    if (!needsAnotherFrame({moved, forced: force, fades: fading})) {
+      // About to sleep: no frame will run the timed sweep, so free the spines the camera left behind now.
+      textures.release(sel, rig.dist, rig.fovT, camera.aspect, pitch, rig.panCur);
+      return false;
+    }
     force = false;
     if (shadowDirty) {
       renderer.shadowMap.needsUpdate = true;
@@ -316,6 +320,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         return corners;
       },
       stats: () => ({...renderer.info.render, textures: renderer.info.memory.textures}),
+      /** Runs up to n frames of 16 ms each, synchronously, until the shelf is at rest. Returns how many ran. The pane throttles requestAnimationFrame, so measurements drive the loop by hand. */
+      frames: (n: number) => {
+        let ran = 0;
+        while (ran < n) {
+          last = performance.now() - 16;
+          ran++;
+          if (!tick()) break;
+        }
+        return ran;
+      },
       /** True when no frame is scheduled: the shelf is at rest. */
       idle: () => !loop.running(),
       bookScreenPos(i: number) {
