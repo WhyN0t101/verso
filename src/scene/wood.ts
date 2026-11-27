@@ -39,7 +39,7 @@ export function stainTint(base: THREE.Color, mean: THREE.Color, stain: number): 
 
 /** Maps the wood texture at a fixed size per world unit, so grain is not stretched on long or tall boards. */
 export function woodUV(g: THREE.BoxGeometry, w: number, h: number, d: number, upright: boolean, shiftU: number, shiftV: number): void {
-  const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+  const uv = g.getAttribute('uv');
   // BoxGeometry faces in order: +x, -x, +y, -y, +z, -z, four vertices each.
   const sizes: [number, number][] = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
   sizes.forEach(([a, b], face) => {
@@ -156,6 +156,7 @@ export function createWood(maxAniso: number, onPhoto: () => void): Wood {
         t.anisotropy = maxAniso;
       }
       map.colorSpace = THREE.SRGBColorSpace;
+      // The loader decodes the JPEG to an ImageBitmap or an HTMLImageElement; both are drawable, but three types `image` loosely.
       photo = {map, normal, mean: meanColor(map.image as CanvasImageSource)};
       woodMat.normalScale.set(1, 1);
       onPhoto();

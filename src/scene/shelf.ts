@@ -230,7 +230,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   /* ---------- loop ---------- */
   /** Reused every frame: what stepping the books found. */
   const motion: MotionResult = {moved: 0, shadow: false};
+  // Reused every frame. `picked` is the state's Set itself, captured here, so the Set must only ever be mutated (add, delete, clear), never replaced.
   const ctx: MotionContext = {dt: 0, sel: undefined, target: null, filtering: false, hover: null, pointerX: 0, pointerY: 0, picked: state.picked};
+  const stepEach = (e: Entry): void => stepBook(e, ctx, motion);
   /** One frame. Returns whether another is needed: false puts the loop to sleep until something wakes it. */
   function tick(): boolean {
     if (!visible) return false;
@@ -275,7 +277,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     ctx.hover = picking.hover();
     ctx.pointerX = pointer.sx;
     ctx.pointerY = pointer.sy;
-    for (const e of entries.values()) stepBook(e, ctx, motion);
+    entries.forEach(stepEach);
     moved += motion.moved;
     if (motion.shadow) shadowDirty = true;
     const fading = textures.stepFades(dt);
@@ -297,6 +299,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   if (import.meta.env.DEV) {
     // Lets the screenshot harness click a book without guessing pixel positions.
+    // Dev only: `window` has no __verso in its type, and nothing else reads it.
     (window as unknown as {__verso: unknown}).__verso = {
       /** Renders once and returns the canvas as a data URL, so tests can read real pixels. */
       snapshot: () => {
@@ -312,8 +315,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         if (!e) return null;
         const p = e.grp.position;
         const sc = e.grp.scale.x;
-        const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => {
-          const w = new THREE.Vector3(e.b.w / 2, (b as number) * e.b.h / 2, (a as number) * e.b.d / 2).applyEuler(e.grp.rotation).multiplyScalar(sc).add(p);
+        const signs: [number, number][] = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+        const corners = signs.map(([a, b]) => {
+          const w = new THREE.Vector3(e.b.w / 2, b * e.b.h / 2, a * e.b.d / 2).applyEuler(e.grp.rotation).multiplyScalar(sc).add(p);
           const v = w.project(camera);
           return {x: ((v.x + 1) / 2) * innerWidth, y: ((1 - v.y) / 2) * innerHeight};
         });

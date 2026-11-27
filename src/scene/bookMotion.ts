@@ -115,5 +115,8 @@ export function stepBook(e: Entry, c: MotionContext, out: MotionResult): void {
   if (diff < 0.002) e.tint.copy(tmpC);
   else e.tint.lerp(tmpC, ease(dt, 8));
   out.moved++;
-  for (let i = 0; i < e.mats.length; i++) e.mats[i]?.color.copy(e.base[i] as THREE.Color).multiply(e.tint);
+  for (let i = 0; i < e.mats.length; i++) {
+    const base = e.base[i];
+    if (base) e.mats[i]?.color.copy(base).multiply(e.tint);
+  }
 }

@@ -67,6 +67,9 @@ export function standBook(b: Book, bx: number, at: number, rowLength: number, ox
   };
 }
 
+/** A mesh's materials as a list, whether it has one or several. */
+const materialsOf = (m: THREE.Mesh): THREE.Material[] => (Array.isArray(m.material) ? m.material : [m.material]);
+
 function shadowed(geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh {
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = m.receiveShadow = true;
@@ -186,12 +189,13 @@ export function createWallBuilder(d: WallBuilderDeps): WallBuilder {
 
   function clearFrame(): void {
     for (const m of frame.children.slice()) {
-      const mesh = m as THREE.Mesh;
-      mesh.geometry.dispose();
-      // Genre plates own their texture and material; the shared wood material is left alone.
-      if (mesh.userData.plate) {
-        (mesh.material as THREE.MeshBasicMaterial).map?.dispose();
-        (mesh.material as THREE.Material).dispose();
+      if (m instanceof THREE.Mesh) {
+        m.geometry.dispose();
+        // Genre plates own their texture and material; the shared wood material is left alone.
+        if (m.userData.plate) for (const mat of materialsOf(m)) {
+          if (mat instanceof THREE.MeshBasicMaterial) mat.map?.dispose();
+          mat.dispose();
+        }
       }
       frame.remove(m);
     }
@@ -200,9 +204,10 @@ export function createWallBuilder(d: WallBuilderDeps): WallBuilder {
   function clearBooks(): void {
     for (const grp of bookRoot.children.slice()) {
       grp.children.forEach((m) => {
-        const mesh = m as THREE.Mesh;
-        mesh.geometry.dispose();
-        new Set(mesh.userData.mats as THREE.Material[]).forEach((x) => x.dispose());
+        if (!(m instanceof THREE.Mesh)) return;
+        m.geometry.dispose();
+        // The three paper faces share one material: a Set disposes it once.
+        new Set(materialsOf(m)).forEach((x) => x.dispose());
       });
       bookRoot.remove(grp);
     }
@@ -312,7 +317,7 @@ export function createWallBuilder(d: WallBuilderDeps): WallBuilder {
             packBookFaces(geo);
             const mesh = new THREE.Mesh(geo, mats);
             mesh.castShadow = mesh.receiveShadow = true;
-            mesh.userData = {id: b.id, mats};
+            mesh.userData = {id: b.id};
             const grp = new THREE.Group();
             grp.add(mesh);
             const home = new THREE.Vector3(...h);

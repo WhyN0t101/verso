@@ -150,7 +150,7 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
       m.map = null;
       m.needsUpdate = true;
       e.base[MAT.spine]?.copy(faceColors(e.b)[2]);
-      m.color.copy(e.base[MAT.spine] as THREE.Color).multiply(e.tint);
+      m.color.copy(e.base[MAT.spine] ?? m.color).multiply(e.tint);
     }
     e.hasSpine = false;
   }
@@ -170,7 +170,8 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
   function startFade(e: Entry, tex: THREE.Texture, generated: THREE.Texture | undefined): void {
     // A newer cover arriving mid-fade: let the running one finish at once so two overlays never stack.
     for (const f of [...fades]) if (f.e === e) endFade(f);
-    const host = e.grp.children[0] as THREE.Mesh;
+    const host = e.grp.children[0];
+    if (!host) return;
     const mat = new THREE.MeshStandardMaterial({map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: FACE_GLOW, roughness: 0.6, transparent: true, opacity: 0, depthWrite: false});
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(e.b.d, e.b.h), mat);
     // Same orientation as the box's +x face, a hair in front of it.
@@ -190,8 +191,9 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
     e.hasCover = true;
     d.dirty();
     const b = e.b;
+    const cover = b.cover;
     const k = textureKey(b, 'cover');
-    if (!b.cover || realCovers.has(k)) return;
+    if (!cover || realCovers.has(k)) return;
     realCovers.add(k);
     const ctl = (e.coverCtl = new AbortController());
     e.coverPending = true;
@@ -208,11 +210,11 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
       texCache.set(k, t);
       startFade(e, t, previous);
     };
-    void loadCover(b.cover, {signal: ctl.signal})
+    void loadCover(cover, {signal: ctl.signal})
       .then((img) => {
         if (img) show(img);
         // The large cover waits for the medium fade to end, so two texture uploads never land in one frame.
-        return new Promise<void>((done) => setTimeout(done, FADE_S * 1000 + 100)).then(() => loadCover(largeCover(b.cover as string), {signal: ctl.signal}));
+        return new Promise<void>((done) => setTimeout(done, FADE_S * 1000 + 100)).then(() => loadCover(largeCover(cover), {signal: ctl.signal}));
       })
       .then((img) => {
         if (img) show(img);
