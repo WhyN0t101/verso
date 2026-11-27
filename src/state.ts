@@ -18,7 +18,6 @@ export const state = {
   section: null as {name: string; genres: string[]} | null,
   fmt: 'post' as 'post' | 'story' | 'square',
   theme: 'classic' as ThemeId,
-  editing: null as string | null,
   /** Demo books not yet saved: an import replaces them instead of merging into them. */
   seeded: !!stored.seeded,
 };

@@ -43,6 +43,7 @@ function renderStars(b: Book): void {
 function renderStatus(b: Book): void {
   const box = $('pStatus');
   box.replaceChildren();
+  // Keys of a Record<Status, string>, so they are Statuses; Object.keys only widens them to string.
   for (const id of Object.keys(STATUS_LABELS) as Status[]) {
     const chip = document.createElement('button');
     chip.type = 'button';
