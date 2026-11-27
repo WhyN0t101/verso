@@ -65,7 +65,8 @@ export function createPicking(d: PickingDeps): Picking {
     ndc.set(...toNdc(ev.clientX, ev.clientY, canvas.getBoundingClientRect()));
     ray.setFromCamera(ndc, camera);
     const hit = ray.intersectObjects(d.pickables, false)[0];
-    return hit ? (hit.object.userData.id as string) : null;
+    const id: unknown = hit?.object.userData.id;
+    return typeof id === 'string' ? id : null;
   }
 
   /** Hovering a book for a moment fetches its cover ahead of the click; moving on cancels it. */
@@ -95,6 +96,8 @@ export function createPicking(d: PickingDeps): Picking {
         if (!id) return;
         down.long = true;
         d.hooks.onLongPress(id);
+        // This runs from a timer, not an input event, and the hook changes what the shelf shows (Select mode glow): wake after it.
+        d.wake();
       }, LONG_PRESS_MS);
     }
     canvas.setPointerCapture(ev.pointerId);

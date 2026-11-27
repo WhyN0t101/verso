@@ -1,3 +1,6 @@
+/** Distance under which an easing value lands on its target, so the loop can sleep; far below a pixel. */
+export const SETTLE_EPS = 1e-4;
+
 /** Fraction of the remaining distance covered in `dt` seconds at easing rate `r` (frame-rate independent). */
 export const ease = (dt: number, r: number): number => 1 - Math.exp(-dt * r);
 
@@ -50,4 +53,9 @@ export function createFrameLoop(
     },
     running: () => pending !== 0,
   };
+}
+
+/** Calls `wake` for each of the event types on `target`, in the capture phase so it runs before the page's own handlers change state. */
+export function wakeOn(target: EventTarget, types: readonly string[], wake: () => void): void {
+  for (const type of types) target.addEventListener(type, wake, {capture: true, passive: true});
 }

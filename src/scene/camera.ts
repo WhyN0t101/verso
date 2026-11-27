@@ -1,16 +1,14 @@
 import * as THREE from 'three';
 import {clamp} from '../util';
-import {approach} from './loop';
+import {SETTLE_EPS, approach} from './loop';
 import {nearestCase} from './wall';
 
-/** Distance under which an easing value lands on its target, so the loop can sleep; far below a pixel. */
-export const SETTLE_EPS = 1e-4;
 /** Height of the section bar plus its gap on screens narrower than the rail breakpoint. */
 const NARROW_BAR_PX = 64;
 
 export const isMobile = (): boolean => innerWidth <= 760;
 /** Height in pixels of the top bar, which covers part of the canvas. */
-export const headerPx = (): number => document.getElementById('bar')?.getBoundingClientRect().height ?? 64;
+const headerPx = (): number => document.getElementById('bar')?.getBoundingClientRect().height ?? 64;
 
 /**
  * The camera and where it is heading. Panning slides along the wall (x); distance and height frame the

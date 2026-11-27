@@ -139,6 +139,20 @@ function startRequest(url: string, inBackground: boolean): InFlight {
   return entry;
 }
 
+/** A signal that aborts when any of `signals` does. AbortSignal.any is missing before Chrome 116 and Safari 17.4, where calling it would throw. */
+export function anySignal(signals: AbortSignal[]): AbortSignal {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
+  const ctl = new AbortController();
+  for (const s of signals) {
+    if (s.aborted) {
+      ctl.abort(s.reason);
+      break;
+    }
+    s.addEventListener('abort', () => ctl.abort(s.reason), {once: true, signal: ctl.signal});
+  }
+  return ctl.signal;
+}
+
 /** Waits for a slot in the lane and fetches. Calling it again replaces the earlier wait (lane upgrade). */
 function enqueue(url: string, entry: InFlight, inBackground: boolean): void {
   const previous = entry.queueCtl;
@@ -150,7 +164,7 @@ function enqueue(url: string, entry: InFlight, inBackground: boolean): void {
       entry.started = true;
       return fetchImage(url, entry.ctl.signal);
     },
-    AbortSignal.any([mine.signal, entry.ctl.signal]),
+    anySignal([mine.signal, entry.ctl.signal]),
   )
     .then((o) => {
       if (o.final) remember(url, o.img);

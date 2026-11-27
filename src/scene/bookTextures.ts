@@ -12,8 +12,8 @@ const FACE_ALBEDO = 0.4;
 const FACE_GLOW = 0.72;
 /** Milliseconds per frame spent drawing spine textures; the nearest bookcase is done first. */
 const SPINE_BUDGET_MS = 8;
-/** Frames between releases of far-away spines (a couple of seconds). */
-const SWEEP_FRAMES = 120;
+/** Time between releases of far-away spines. Time, not frames: a loop that sleeps draws too few frames to count. */
+const SWEEP_MS = 2000;
 const FADE_S = 0.4;
 
 /** Cache key of one of a book's textures: the id and version tell when it is out of date. */
@@ -39,6 +39,16 @@ export function spinesToDraw<T extends {caseIndex: number; hasSpine: boolean}>(e
     (todo ??= []).push({e, d});
   }
   return todo ? todo.sort((a, c) => a.d - c.d).map((x) => x.e) : null;
+}
+
+/** Whether the interval since the last release of far spines has passed. */
+export const sweepDue = (now: number, last: number, interval: number): boolean => now - last >= interval;
+
+/** Drawn spines (other than the open book's) whose bookcase is far beyond the view: their textures can go. */
+export function farSpines<T extends {caseIndex: number; hasSpine: boolean}>(entries: Iterable<T>, sel: T | undefined, pitch: number, panCur: number, reach: number): T[] {
+  const out: T[] = [];
+  for (const e of entries) if (e.hasSpine && e !== sel && isFarSpine(e.caseIndex, pitch, panCur, reach)) out.push(e);
+  return out;
 }
 
 /** Whether a drawn spine is so far from the camera that its texture should be released. */
@@ -76,6 +86,8 @@ export interface BookTextures {
   retone(e: Entry): void;
   /** Called every frame: the open book's cover, spines near the camera (within a time budget) and the release of far ones. */
   update(sel: Entry | undefined, camDist: number, fovT: number, aspect: number, pitch: number, panCur: number): void;
+  /** Releases the textures of spines far from the camera now. The frame loop calls it when it goes to sleep, so a pan that ends does not leave them behind. */
+  release(sel: Entry | undefined, camDist: number, fovT: number, aspect: number, pitch: number, panCur: number): void;
   /** A book that was open was put back before its cover arrived: stop the request, and start over next time. */
   cancelCover(e: Entry): void;
   /** Advances the cover cross-fades by `dt` seconds. Returns how many ran, so the loop knows to keep drawing. */
@@ -98,7 +110,7 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
   /** Cover textures whose real image has been requested, so each is fetched once. */
   const realCovers = new Set<string>();
   const fades = new Set<Fade>();
-  let sweep = 0;
+  let lastSweep = performance.now();
 
   function getTex(b: Book, kind: 'spine' | 'cover'): THREE.Texture {
     const k = textureKey(b, kind);
@@ -138,7 +150,7 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
       m.map = null;
       m.needsUpdate = true;
       e.base[MAT.spine]?.copy(faceColors(e.b)[2]);
-      m.color.copy(e.base[MAT.spine] as THREE.Color).multiply(e.tint);
+      m.color.copy(e.base[MAT.spine] ?? m.color).multiply(e.tint);
     }
     e.hasSpine = false;
   }
@@ -158,7 +170,8 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
   function startFade(e: Entry, tex: THREE.Texture, generated: THREE.Texture | undefined): void {
     // A newer cover arriving mid-fade: let the running one finish at once so two overlays never stack.
     for (const f of [...fades]) if (f.e === e) endFade(f);
-    const host = e.grp.children[0] as THREE.Mesh;
+    const host = e.grp.children[0];
+    if (!host) return;
     const mat = new THREE.MeshStandardMaterial({map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: FACE_GLOW, roughness: 0.6, transparent: true, opacity: 0, depthWrite: false});
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(e.b.d, e.b.h), mat);
     // Same orientation as the box's +x face, a hair in front of it.
@@ -178,8 +191,9 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
     e.hasCover = true;
     d.dirty();
     const b = e.b;
+    const cover = b.cover;
     const k = textureKey(b, 'cover');
-    if (!b.cover || realCovers.has(k)) return;
+    if (!cover || realCovers.has(k)) return;
     realCovers.add(k);
     const ctl = (e.coverCtl = new AbortController());
     e.coverPending = true;
@@ -196,11 +210,11 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
       texCache.set(k, t);
       startFade(e, t, previous);
     };
-    void loadCover(b.cover, {signal: ctl.signal})
+    void loadCover(cover, {signal: ctl.signal})
       .then((img) => {
         if (img) show(img);
         // The large cover waits for the medium fade to end, so two texture uploads never land in one frame.
-        return new Promise<void>((done) => setTimeout(done, FADE_S * 1000 + 100)).then(() => loadCover(largeCover(b.cover as string), {signal: ctl.signal}));
+        return new Promise<void>((done) => setTimeout(done, FADE_S * 1000 + 100)).then(() => loadCover(largeCover(cover), {signal: ctl.signal}));
       })
       .then((img) => {
         if (img) show(img);
@@ -244,7 +258,11 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
       // Only books in bookcases near the camera get a spine texture, within a time budget per frame, so 100+ books do not stall startup.
       const reach = spineReach(camDist, fovT, aspect, pitch);
       // Every couple of seconds, spines far beyond the view are released, so panning a big wall does not keep them all in memory.
-      if (++sweep % SWEEP_FRAMES === 0) for (const e of d.entries.values()) if (e.hasSpine && e !== sel && isFarSpine(e.caseIndex, pitch, panCur, reach)) evictSpine(e);
+      const now = performance.now();
+      if (sweepDue(now, lastSweep, SWEEP_MS)) {
+        lastSweep = now;
+        for (const e of farSpines(d.entries.values(), sel, pitch, panCur, reach)) evictSpine(e);
+      }
       // Nearest bookcases first, so what is on screen gets its spine before what is merely close; a time budget keeps frames smooth.
       const todo = spinesToDraw(d.entries.values(), panCur, pitch, reach);
       if (!todo) return;
@@ -253,6 +271,11 @@ export function createBookTextures(d: BookTexturesDeps): BookTextures {
         applySpine(e);
         if (performance.now() - start > SPINE_BUDGET_MS) break;
       }
+    },
+
+    release(sel, camDist, fovT, aspect, pitch, panCur) {
+      lastSweep = performance.now();
+      for (const e of farSpines(d.entries.values(), sel, pitch, panCur, spineReach(camDist, fovT, aspect, pitch))) evictSpine(e);
     },
 
     cancelCover(e) {

@@ -82,3 +82,42 @@ describe('stepBook', () => {
     expect(e.mats[1]?.emissiveIntensity).toBe(0);
   });
 });
+
+describe('stepBook stops only when the book has arrived', () => {
+  /** Steps until a frame reports no movement; returns the frame count. */
+  const settle = (e: Entry, c: () => MotionContext): number => {
+    const out = fresh();
+    let frames = 0;
+    do {
+      out.moved = 0;
+      stepBook(e, c(), out);
+    } while (out.moved > 0 && ++frames < 5000);
+    return frames;
+  };
+  /** Small seeded generator so the cases are the same every run. */
+  const seeded = (seed: number) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+  it('a book that sleeps is on its target, for many targets, frame times and starting poses', () => {
+    const r = seeded(7);
+    for (let i = 0; i < 300; i++) {
+      const e = entry('s' + i);
+      e.grp.position.set(r() * 4, r() * 3, -0.5 + r() * 0.3);
+      e.grp.rotation.set((r() - 0.5) * 0.4, (r() - 0.5) * 0.4, (r() - 0.5) * 0.4);
+      const target = {pos: new THREE.Vector3(r() * 3 - 1, r() * 2, 2 + r()), s: 0.8 + r()};
+      const dt = 0.005 + r() * 0.045;
+      const open = (): MotionContext => ctx({dt, sel: e, target, pointerX: 0, pointerY: 0});
+      settle(e, open);
+      // Stepping again for a long time must not move it any further: it really had arrived.
+      const before = e.grp.position.clone();
+      for (let k = 0; k < 30; k++) stepBook(e, open(), fresh());
+      expect(e.grp.position.distanceTo(before)).toBeLessThan(1e-9);
+      expect(e.grp.position.distanceTo(target.pos)).toBeLessThan(2e-3);
+      expect(Math.abs(e.grp.scale.x - target.s)).toBeLessThan(2e-3);
+      // And back to the shelf.
+      const home = (): MotionContext => ctx({dt});
+      settle(e, home);
+      expect(e.grp.position.distanceTo(e.home)).toBeLessThan(2e-3);
+      expect(Math.abs(e.grp.scale.x - 1)).toBeLessThan(2e-3);
+    }
+  });
+});

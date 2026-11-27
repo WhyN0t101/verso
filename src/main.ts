@@ -125,6 +125,8 @@ initPanel({
 
 initSelect({
   onChange() {
+    // Picks come from taps, long presses and the bar's buttons: whichever it was, the shelf must redraw the glow.
+    shelf?.wake();
     if (state.selecting && state.sel) deselect();
     if (listMode) renderList(activate);
   },

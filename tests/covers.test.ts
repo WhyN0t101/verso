@@ -212,3 +212,40 @@ describe('loadCover', () => {
     });
   });
 });
+
+describe('anySignal', () => {
+  const original = AbortSignal.any;
+  afterEach(() => {
+    Object.defineProperty(AbortSignal, 'any', {value: original, configurable: true, writable: true});
+  });
+
+  it('aborts when any of its inputs aborts, with the native implementation', async () => {
+    const {anySignal} = await import('../src/covers');
+    const a = new AbortController();
+    const b = new AbortController();
+    const s = anySignal([a.signal, b.signal]);
+    expect(s.aborted).toBe(false);
+    b.abort();
+    expect(s.aborted).toBe(true);
+  });
+
+  it('still works where AbortSignal.any does not exist (Chrome before 116, Safari before 17.4)', async () => {
+    Object.defineProperty(AbortSignal, 'any', {value: undefined, configurable: true, writable: true});
+    const {anySignal} = await import('../src/covers');
+    const a = new AbortController();
+    const b = new AbortController();
+    const s = anySignal([a.signal, b.signal]);
+    expect(s.aborted).toBe(false);
+    a.abort();
+    expect(s.aborted).toBe(true);
+    expect(anySignal([a.signal, b.signal]).aborted).toBe(true);
+  });
+
+  it('does not queue a cover load on a browser without AbortSignal.any', async () => {
+    Object.defineProperty(AbortSignal, 'any', {value: undefined, configurable: true, writable: true});
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x', {status: 404})));
+    const {loadCover} = await import('../src/covers');
+    await expect(loadCover('/api/cover?id=991')).resolves.toBeNull();
+    vi.unstubAllGlobals();
+  });
+});
