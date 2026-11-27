@@ -91,7 +91,7 @@ h3{font:600 15px var(--serif);color:var(--ink);margin:26px 0 8px;padding-bottom:
 #toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);z-index:40;background:var(--panel);border:1px solid var(--line);padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;max-width:92vw;text-align:center}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #listView{position:fixed;inset:0;z-index:3;overflow-y:auto;padding:72px 16px 24px;display:flex;flex-direction:column;gap:6px;max-width:720px;margin:0 auto}
-.list-row{display:grid;grid-template-columns:1fr auto;gap:2px 12px;text-align:left;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;color:var(--ink);font:500 14px var(--sans);cursor:pointer}
+.list-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:2px 12px;text-align:left;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;color:var(--ink);font:500 14px var(--sans);cursor:pointer}
 .list-row:hover{background:rgba(255,255,255,.11)}
 .list-title{font:700 17px var(--serif)}
 .list-meta{grid-column:1;color:var(--mute)}
