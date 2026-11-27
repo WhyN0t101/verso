@@ -21,6 +21,8 @@ function row(b: Book, onOpen: (id: string) => void): HTMLElement {
   const li = document.createElement('button');
   li.className = 'list-row' + (state.picked.has(b.id) ? ' picked' : '');
   li.type = 'button';
+  // Select mode ticks rows; the colour alone is not enough for a screen reader.
+  if (state.selecting) li.setAttribute('aria-pressed', String(state.picked.has(b.id)));
   const title = document.createElement('span');
   title.className = 'list-title';
   title.textContent = b.title;
