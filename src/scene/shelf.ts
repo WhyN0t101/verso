@@ -403,12 +403,43 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     brass.addColorStop(1, '#a8823d');
     g.fillStyle = brass;
     g.fillRect(0, 0, c.width, c.height);
+    // Brushed grain, a bevelled rim and a screw at each end, so the plate reads as metal fixed to the wood.
+    const grain = rng(hash('plate' + text));
+    for (let i = 0; i < 260; i++) {
+      g.fillStyle = grain() < 0.5 ? 'rgba(255,240,200,.07)' : 'rgba(60,35,10,.07)';
+      g.fillRect(0, grain() * c.height, c.width, 1);
+    }
+    g.lineWidth = 3;
+    g.strokeStyle = 'rgba(255,240,200,.55)';
+    g.strokeRect(2, 2, c.width - 4, c.height - 4);
+    g.strokeStyle = 'rgba(70,45,12,.55)';
+    g.beginPath();
+    g.moveTo(c.width - 1.5, 3);
+    g.lineTo(c.width - 1.5, c.height - 1.5);
+    g.lineTo(3, c.height - 1.5);
+    g.stroke();
+    for (const sx of [c.height * 0.5, c.width - c.height * 0.5]) {
+      g.fillStyle = 'rgba(70,45,12,.75)';
+      g.beginPath();
+      g.arc(sx, c.height / 2, c.height * 0.1, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#c9a65a';
+      g.beginPath();
+      g.arc(sx - 1, c.height / 2 - 1, c.height * 0.085, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(60,38,10,.8)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(sx - c.height * 0.06, c.height / 2 + c.height * 0.04);
+      g.lineTo(sx + c.height * 0.06, c.height / 2 - c.height * 0.04);
+      g.stroke();
+    }
     // Dark ink on brass: about 7:1, readable at a glance.
     g.fillStyle = '#2a1b0c';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     // Long names wrap onto two lines instead of shrinking until they cannot be read.
-    const {lines, fontSize} = layoutPlate(text, c.width - 48, c.height, (s, size) => {
+    const {lines, fontSize} = layoutPlate(text, c.width - c.height * 1.3, c.height, (s, size) => {
       g.font = `600 ${size}px ${SERIF}`;
       return g.measureText(s).width;
     });
