@@ -62,7 +62,10 @@ src/toneQueue.ts  background queue that fills in the colour of covers that have 
 src/state.ts    the one shared state object, and persisting it
 src/search.ts   the search and status filter
 src/data/       book model, storage, settings, backup/import, bulk delete
-src/scene/      Three.js wall: wall.ts (pure layout and camera targeting), shelf.ts, room.ts (floor, lamps, props), assets.ts (glTF loader)
+src/scene/      Three.js wall. shelf.ts wires the parts: loop.ts (sleeping frame loop), camera.ts (rig, framing), picking.ts (pointer gestures),
+                wood.ts (bookcase wood), wallBuild.ts (bookcases and books), bookTextures.ts (spines, covers, fades), bookMotion.ts (per-book frame step),
+                entry.ts (one book on the wall), faces.ts (book face packing), plate.ts (fascia plate layout), wall.ts (pure layout and camera targeting),
+                room.ts (floor, lamps, props), assets.ts (glTF loader), tint.ts (dimming)
 src/textures/   canvas drawing for spines and generated covers
 src/export/     export card drawing
 src/ui/         panel, add/edit form, export dialog, style dialog, jump list, select mode, list view
@@ -75,4 +78,5 @@ docs/           design notes and plans
 ## Notes
 
 - Fonts (Literata for titles and notes, Atkinson Hyperlegible Next for small interface text) are bundled with `@fontsource`; the app waits for them before drawing any canvas.
+- The frame loop sleeps. It draws only while something moves or changed, then schedules no frame at all; any input, state change, resize, arriving texture or cover fade wakes it (`window.__verso.idle()` in dev tells which). An idle shelf costs no CPU.
 - Textures are created lazily: spines for rows near the camera, the cover face on first selection. Textures of deleted or edited books are disposed on rebuild.

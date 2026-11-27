@@ -13,7 +13,7 @@ shared/         genre list and mapping (used by Worker and app)
 src/worker.ts   Worker: /api/search, /api/covers, /api/cover; everything else goes to ASSETS
 src/api.ts      browser client for /api/search
 src/data/       book model, storage, settings, backup/import
-src/scene/      three.js shelf, room props and the glTF model loader
+src/scene/      three.js wall: shelf.ts wires loop, camera, picking, wood, wallBuild, bookTextures, bookMotion, entry, faces, plate, wall, room, assets, tint
 src/textures/   canvas drawing for spines and generated covers
 src/export/     share card drawing
 src/ui/         panel, form, export dialog, style dialog, list view

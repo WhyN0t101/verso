@@ -1,6 +1,6 @@
 # Verso design plan
 
-Status: proposal, not built. Review notes at the end say what changed from the first draft and why.
+Status: built and shipped in the app; this file is the design record. Review notes at the end say what changed from the first draft and why.
 
 ## Brief in one line
 
