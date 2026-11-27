@@ -10,6 +10,7 @@ import {SERIF, bookKind, drawCover, pagesCanvas, paletteOf, sat, spineCanvas, sp
 import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
 import {contactShadow, loadModel, type ModelName} from './assets';
+import {packBookFaces} from './faces';
 import {tintFor} from './tint';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
@@ -108,7 +109,7 @@ const headerPx = (): number => document.getElementById('bar')?.getBoundingClient
 const NARROW_BAR_PX = 64;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
 const LIGHT_UNIT = Math.PI;
-const MAT = {cover: 0, back: 1, spine: 4} as const;
+const MAT = {cover: 0, back: 1, spine: 2} as const;
 // The cover face gets part of its brightness from the picture itself (emissive) so the lamp's warmth and
 // angle cannot wash it out: albedo * light + glow comes to about the picture's own brightness.
 const FACE_ALBEDO = 0.4;
@@ -689,7 +690,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       row.forEach(({b, x: bx}, at) => {
         // Older books have yellowed pages; the tint multiplies the paper texture.
         const paper = new THREE.Color(0xffffff).lerp(new THREE.Color(0xe3cf9c), rng(hash(b.id + 'age'))() * 0.9);
-        const pages = () => new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
+        const pages = new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
         const binding = BINDING[bookKind(b)];
         const colors = faceColors(b);
         // Seeded by id, so a book stands the same way after every rebuild.
@@ -697,16 +698,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         const pull = r() * MAX_PULL;
         const angle = 0.06 + r() * (MAX_LEAN - 0.06);
         const lean = at > 0 && at === row.length - 1 && r() < 0.75 && innerW - 0.1 - (bx + b.w) > 2 * (b.h / 2) * Math.sin(angle) + 0.06 ? angle : 0;
-        // Order follows BoxGeometry faces: +x cover, -x back board, +y, -y, +z spine, -z.
+        // Slots follow packBookFaces: cover, back board, spine, then one material for all three paper faces.
         const mats = [
           new THREE.MeshStandardMaterial({color: colors[0], roughness: 0.6}),
           new THREE.MeshStandardMaterial({color: colors[1], roughness: 0.7}),
-          pages(),
-          pages(),
           new THREE.MeshStandardMaterial({color: colors[2], roughness: binding.gloss}),
-          pages(),
+          pages,
         ];
-        const mesh = new THREE.Mesh(new RoundedBoxGeometry(b.w, b.h, b.d, 2, binding.radius), mats);
+        const geo = new RoundedBoxGeometry(b.w, b.h, b.d, 2, binding.radius);
+        packBookFaces(geo);
+        const mesh = new THREE.Mesh(geo, mats);
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.userData = {id: b.id, mats};
         const grp = new THREE.Group();
