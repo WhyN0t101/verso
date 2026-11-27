@@ -36,6 +36,18 @@ const COVER_MISS_CC = 'public, max-age=300, s-maxage=3600';
 /** Medium is enough for the shelf; the export card asks for L. */
 const DEFAULT_COVER_SIZE = 'M';
 
+/* ---------- untrusted JSON ---------- */
+
+// Everything an upstream sends is `unknown` until one of these has checked it; the app never casts a reply.
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const asRecord = (v: unknown): Record<string, unknown> => (isRecord(v) ? v : {});
+const records = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter(isRecord) : []);
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '');
+const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
+/** The same rule /api/cover enforces on its id. */
+const isCoverId = (v: unknown): v is number => isInt(v) && v > 0 && v < 1e12;
+
 /* ---------- text helpers ---------- */
 
 /** Cuts at a sentence end when one falls in the back half, else at a word, adding an ellipsis. */
@@ -54,7 +66,7 @@ export function truncate(s: string, max = MAX_SUMMARY): string {
  * "----------" separators and "([source][1])" tails. Returns a clean, length-capped summary.
  */
 export function cleanDescription(raw: unknown): string {
-  let s = typeof raw === 'string' ? raw : raw && typeof raw === 'object' && typeof (raw as {value?: unknown}).value === 'string' ? (raw as {value: string}).value : '';
+  let s = typeof raw === 'string' ? raw : isRecord(raw) && typeof raw.value === 'string' ? raw.value : '';
   const tail = s.search(/\r?\n\s*(-{3,}|\*{3,}|_{3,})|\(\[?source\]?|\bAlso contained in\b|\bContains:|\bSee also:/i);
   if (tail >= 0) s = s.slice(0, tail);
   s = s
@@ -98,6 +110,7 @@ async function getJson(url: string): Promise<unknown> {
 
 /** Workers Cache API in front of an upstream call. Only 200s are stored; the response's Cache-Control sets the TTL. */
 async function withCache(keyUrl: string, ctx: Ctx, produce: () => Promise<Response>): Promise<Response> {
+  // lib.dom's CacheStorage has no `default`; that member exists only in the Workers runtime.
   const cache = (caches as unknown as {default: Cache}).default;
   const key = new Request(keyUrl, {method: 'GET'});
   const hit = await cache.match(key);
@@ -108,15 +121,6 @@ async function withCache(keyUrl: string, ctx: Ctx, produce: () => Promise<Respon
 }
 
 /* ---------- /api/search ---------- */
-
-interface OlDoc {
-  key?: string;
-  title?: string;
-  author_name?: string[];
-  first_publish_year?: number;
-  subject?: string[];
-  cover_i?: number;
-}
 
 export interface SearchResult {
   work: string;
@@ -133,19 +137,15 @@ export interface WorkDetail {
   source: 'openlibrary' | 'google' | null;
 }
 
-const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-/** The same rule /api/cover enforces on its id. */
-const isCoverId = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0 && (v as number) < 1e12;
-
 async function search(q: string): Promise<SearchResult[]> {
   const fields = 'key,title,author_name,first_publish_year,subject,cover_i';
-  const data = (await getJson(`${OL}/search.json?q=${encodeURIComponent(q)}&limit=8&fields=${fields}`)) as {docs?: OlDoc[]};
+  const data = asRecord(await getJson(`${OL}/search.json?q=${encodeURIComponent(q)}&limit=8&fields=${fields}`));
   const seen = new Set<string>();
   const out: SearchResult[] = [];
-  for (const d of data.docs ?? []) {
+  for (const d of records(data.docs)) {
     const work = /^\/works\/(OL\d+W)$/.exec(typeof d.key === 'string' ? d.key : '')?.[1];
     // The reply is third-party JSON: every field is checked for its type before it reaches the app.
-    const title = typeof d.title === 'string' ? d.title.slice(0, 150) : '';
+    const title = text(d.title, 150);
     if (!work || !title) continue;
     const first = strings(d.author_name)[0];
     const author = first ? first.slice(0, 100) : '';
@@ -156,7 +156,7 @@ async function search(q: string): Promise<SearchResult[]> {
       work,
       title,
       author,
-      year: Number.isInteger(d.first_publish_year) ? (d.first_publish_year as number) : null,
+      year: isInt(d.first_publish_year) ? d.first_publish_year : null,
       genre: mapGenre(strings(d.subject)),
       cover: isCoverId(d.cover_i) ? `/api/cover?id=${d.cover_i}` : null,
     });
@@ -167,21 +167,20 @@ async function search(q: string): Promise<SearchResult[]> {
 async function googleSummary(title: string, author: string, key: string): Promise<string> {
   const q = `intitle:${title}${author ? `+inauthor:${author}` : ''}`;
   const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q).replace(/%2B/g, '+')}&maxResults=3&printType=books&fields=items(volumeInfo(description))&key=${encodeURIComponent(key)}`;
-  const data = (await getJson(url)) as {items?: {volumeInfo?: {description?: string}}[]};
-  for (const it of data.items ?? []) {
-    const s = cleanDescription(it.volumeInfo?.description);
+  const data = asRecord(await getJson(url));
+  for (const it of records(data.items)) {
+    const s = cleanDescription(asRecord(it.volumeInfo).description);
     if (s) return s;
   }
   return '';
 }
 
 /** First author's name from the Open Library work record, or '' when it cannot be resolved. */
-async function authorName(work: {authors?: {author?: {key?: string}}[]}): Promise<string> {
-  const key = work.authors?.[0]?.author?.key ?? '';
-  if (!/^\/authors\/OL\d+A$/.test(key)) return '';
+async function authorName(work: Record<string, unknown>): Promise<string> {
+  const key = asRecord(records(work.authors)[0]?.author).key;
+  if (typeof key !== 'string' || !/^\/authors\/OL\d+A$/.test(key)) return '';
   try {
-    const a = (await getJson(`${OL}${key}.json`)) as {name?: unknown};
-    return typeof a.name === 'string' ? a.name.slice(0, 100) : '';
+    return text(asRecord(await getJson(`${OL}${key}.json`)).name, 100);
   } catch (err) {
     // Title alone still finds most books, so a failed author lookup is not fatal.
     console.warn('author lookup failed', String(err));
@@ -194,12 +193,12 @@ async function authorName(work: {authors?: {author?: {key?: string}}[]}): Promis
  * Open Library's own record, never from the request, so the result is the same for every caller.
  */
 async function workDetail(id: string, googleKey: string | undefined): Promise<WorkDetail> {
-  const work = (await getJson(`${OL}/works/${id}.json`)) as {title?: unknown; description?: unknown; subjects?: string[]; authors?: {author?: {key?: string}}[]};
-  const genre = mapGenre(work.subjects ?? []);
+  const work = asRecord(await getJson(`${OL}/works/${id}.json`));
+  const genre = mapGenre(strings(work.subjects));
   const summary = cleanDescription(work.description);
   if (summary) return {summary, genre, source: 'openlibrary'};
   // No key means no fallback, quietly: Open Library alone is a complete flow.
-  const title = typeof work.title === 'string' ? work.title.slice(0, 150) : '';
+  const title = text(work.title, 150);
   if (!googleKey || !title) return {summary: '', genre, source: null};
   try {
     const g = await googleSummary(title, await authorName(work), googleKey);
@@ -239,12 +238,6 @@ export interface CoverChoice {
   year: number | null;
 }
 
-interface OlEdition {
-  title?: string;
-  covers?: number[];
-  publish_date?: string;
-}
-
 const MAX_CHOICES = 8;
 // Editions that are about the book rather than the book.
 const GUIDE = /\b(study guides?|sparknotes|cliffs? ?notes|notes|summary|summaries|analysis|workbook|companion|teachers?|lesson|quiz|critical|essays?|commentary|reader'?s guide)\b/i;
@@ -255,58 +248,50 @@ const normTitle = (t: string): string => t.toLowerCase().replace(/[^a-z0-9]+/g, 
  * Orders edition covers for one book: an exact title match first, titles that contain it next, and
  * study guides and notes editions last. Only positive integer ids survive (the same rule /api/cover enforces).
  */
-export function rankCovers(editions: OlEdition[], bookTitle: string): CoverChoice[] {
+export function rankCovers(editions: readonly unknown[], bookTitle: string): CoverChoice[] {
   const want = normTitle(bookTitle);
   const seen = new Set<number>();
   const scored: {c: CoverChoice; score: number; order: number}[] = [];
-  editions.forEach((e, order) => {
-    const id = (e.covers ?? []).find(isCoverId);
+  records(editions).forEach((e, order) => {
+    const id = (Array.isArray(e.covers) ? e.covers : []).find(isCoverId);
     if (id === undefined || seen.has(id)) return;
     seen.add(id);
-    const title = typeof e.title === 'string' ? e.title.slice(0, 150) : '';
+    const title = text(e.title, 150);
     const have = normTitle(title);
     let score = 0;
     if (have === want) score += 4;
     else if (want && have.includes(want)) score += 2;
     // "Notes from Underground" is the book itself: an exact match is never a guide.
     if (have !== want && GUIDE.test(title)) score -= 5;
-    const year = Number(/\b(\d{4})\b/.exec(e.publish_date ?? '')?.[1]);
+    const year = Number(/\b(\d{4})\b/.exec(text(e.publish_date, 40))?.[1]);
     scored.push({c: {id, title, year: Number.isFinite(year) ? year : null}, score, order});
   });
   scored.sort((a, b) => b.score - a.score || a.order - b.order);
   return scored.slice(0, MAX_CHOICES).map((x) => x.c);
 }
 
-interface OlWorkDoc {
-  key?: string;
-  title?: string;
-  author_name?: string[];
-  cover_i?: number;
-  edition_count?: number;
-}
-
 /**
  * The most-published works by the author carry the real editions. A search on the bare title can hit a
  * study guide or a translation under another title, so the search is free text and authors filter it.
  */
-export function pickWorks(docs: OlWorkDoc[], author: string): string[] {
+export function pickWorks(docs: readonly unknown[], author: string): string[] {
   const last = normTitle(author).split(' ').pop() ?? '';
-  const withKey = docs.filter((d) => /^\/works\/OL\d+W$/.test(d.key ?? ''));
-  const byAuthor = last ? withKey.filter((d) => (d.author_name ?? []).some((n) => normTitle(n).includes(last))) : withKey;
+  const withKey = records(docs).filter((d) => typeof d.key === 'string' && /^\/works\/OL\d+W$/.test(d.key));
+  const byAuthor = last ? withKey.filter((d) => strings(d.author_name).some((n) => normTitle(n).includes(last))) : withKey;
+  const editionCount = (d: Record<string, unknown>): number => (isInt(d.edition_count) ? d.edition_count : 0);
   return (byAuthor.length ? byAuthor : withKey)
-    .sort((a, b) => (b.edition_count ?? 0) - (a.edition_count ?? 0))
+    .sort((a, b) => editionCount(b) - editionCount(a))
     .slice(0, 2)
-    .map((d) => (d.key ?? '').slice(7));
+    .map((d) => text(d.key, 40).slice(7));
 }
 
 async function coverChoices(title: string, author: string): Promise<CoverChoice[]> {
   const fields = 'key,title,author_name,cover_i,edition_count';
-  const found = (await getJson(`${OL}/search.json?q=${encodeURIComponent(`${title} ${author}`.trim())}&limit=8&fields=${fields}`)) as {docs?: OlWorkDoc[]};
-  const docs = found.docs ?? [];
-  const works = pickWorks(docs, author);
+  const found = asRecord(await getJson(`${OL}/search.json?q=${encodeURIComponent(`${title} ${author}`.trim())}&limit=8&fields=${fields}`));
+  const works = pickWorks(Array.isArray(found.docs) ? found.docs : [], author);
   const lists = await Promise.allSettled(works.map((w) => getJson(`${OL}/works/${w}/editions.json?limit=100`)));
-  const editions: OlEdition[] = [];
-  for (const l of lists) if (l.status === 'fulfilled') editions.push(...(((l.value as {entries?: OlEdition[]}).entries) ?? []));
+  const editions: unknown[] = [];
+  for (const l of lists) if (l.status === 'fulfilled') editions.push(...records(asRecord(l.value).entries));
   if (!editions.length && lists.every((l) => l.status === 'rejected') && works.length) throw new Error('editions unavailable');
   return rankCovers(editions, title);
 }
@@ -329,6 +314,35 @@ async function handleCovers(url: URL, ctx: Ctx): Promise<Response> {
 
 /* ---------- /api/cover ---------- */
 
+/** The body of `r`, or null as soon as it is known to exceed `max` bytes (by its header, or while reading), so a huge reply is never held in memory. */
+async function readCapped(r: Response, max: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (Number(r.headers.get('content-length')) > max) {
+    await r.body?.cancel();
+    return null;
+  }
+  const reader = r.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
 /** Only numeric Open Library ids are accepted, so this is not an open proxy. */
 async function handleCover(url: URL, ctx: Ctx): Promise<Response> {
   const rawId = url.searchParams.get('id') ?? '';
@@ -346,8 +360,8 @@ async function handleCover(url: URL, ctx: Ctx): Promise<Response> {
       // A 429 or 403 says nothing about the cover, so it must not be cached as a miss.
       if (!r.ok) throw new Error(`upstream ${r.status}`);
       if (!COVER_TYPES.has(type)) return json({error: 'no cover'}, 404, COVER_MISS_CC);
-      const buf = await r.arrayBuffer();
-      if (buf.byteLength > MAX_COVER_BYTES) return json({error: 'cover too large'}, 502);
+      const buf = await readCapped(r, MAX_COVER_BYTES);
+      if (!buf) return json({error: 'cover too large'}, 502);
       return new Response(buf, {status: 200, headers: {'Content-Type': type, 'Cache-Control': COVER_CC, 'X-Content-Type-Options': 'nosniff'}});
     });
   } catch (err) {
