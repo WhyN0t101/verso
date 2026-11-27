@@ -240,3 +240,11 @@ describe('mergeBooks edges', () => {
     expect(same.books).toEqual([a, b]);
   });
 });
+
+describe('backup size limit', () => {
+  it('refuses a file with an absurd number of books before sanitising them', () => {
+    const books = Array.from({length: 10_001}, () => ({title: 'x'}));
+    expect(() => parseBackup(JSON.stringify({app: 'verso', version: 1, books}))).toThrow(/too many books/);
+    expect(parseBackup(JSON.stringify({app: 'verso', version: 1, books: books.slice(0, 10_000)})).books).toHaveLength(10_000);
+  });
+});
