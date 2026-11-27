@@ -12,7 +12,7 @@ import {stepBook, type MotionContext, type MotionResult} from './bookMotion';
 import {createBookTextures} from './bookTextures';
 import type {Entry} from './entry';
 import {aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
-import {SETTLE_EPS, approach, createFrameLoop, needsAnotherFrame} from './loop';
+import {SETTLE_EPS, approach, createFrameLoop, needsAnotherFrame, wakeOn} from './loop';
 import {caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, type SectionInfo, type Wall} from './wall';
 
 export interface ShelfHooks {
@@ -347,7 +347,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   addEventListener('resize', onResize);
   // Every state change the page makes (select, search, filter, pick, import) starts with input, so any input wakes the loop.
-  for (const type of ['pointerdown', 'keydown', 'input', 'change', 'click']) addEventListener(type, wake, {capture: true, passive: true});
+  wakeOn(window, ['pointerdown', 'keydown', 'input', 'change', 'click'], wake);
+  // three re-creates its GL state on restore, but nothing draws until a frame runs: without this the canvas stays blank until the next input.
+  wakeOn(canvas, ['webglcontextrestored'], dirty);
   onResize();
 
   return {

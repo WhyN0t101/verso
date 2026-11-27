@@ -54,3 +54,8 @@ export function createFrameLoop(
     running: () => pending !== 0,
   };
 }
+
+/** Calls `wake` for each of the event types on `target`, in the capture phase so it runs before the page's own handlers change state. */
+export function wakeOn(target: EventTarget, types: readonly string[], wake: () => void): void {
+  for (const type of types) target.addEventListener(type, wake, {capture: true, passive: true});
+}

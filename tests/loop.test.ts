@@ -77,3 +77,26 @@ describe('createFrameLoop', () => {
     expect(raf.size()).toBe(1);
   });
 });
+
+describe('wakeOn', () => {
+  it('runs the handler for each listed event type, and registers them as passive capture listeners', async () => {
+    const {wakeOn} = await import('../src/scene/loop');
+    const seen: [string, unknown][] = [];
+    const target = {addEventListener: (type: string, _fn: () => void, opts: unknown) => void seen.push([type, opts])} as unknown as EventTarget;
+    wakeOn(target, ['pointerdown', 'keydown'], () => undefined);
+    expect(seen.map(([t]) => t)).toEqual(['pointerdown', 'keydown']);
+    expect(seen[0]?.[1]).toEqual({capture: true, passive: true});
+  });
+
+  it('wakes the loop again after a WebGL context is restored, so the canvas is not left blank', async () => {
+    const {wakeOn, createFrameLoop} = await import('../src/scene/loop');
+    const queue: (() => void)[] = [];
+    const loop = createFrameLoop(() => false, (cb) => queue.push(() => cb(0)));
+    const handlers = new Map<string, () => void>();
+    const canvas = {addEventListener: (t: string, fn: () => void) => void handlers.set(t, fn)} as unknown as EventTarget;
+    wakeOn(canvas, ['webglcontextrestored'], () => loop.wake());
+    expect(loop.running()).toBe(false);
+    handlers.get('webglcontextrestored')?.();
+    expect(loop.running()).toBe(true);
+  });
+});
