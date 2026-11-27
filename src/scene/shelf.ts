@@ -113,6 +113,8 @@ const MAT = {cover: 0, back: 1, spine: 4} as const;
 // angle cannot wash it out: albedo * light + glow comes to about the picture's own brightness.
 const FACE_ALBEDO = 0.4;
 const FACE_GLOW = 0.72;
+/** Milliseconds per frame spent drawing spine textures; the nearest bookcase is done first. */
+const SPINE_BUDGET_MS = 8;
 
 const ease = (dt: number, r: number) => 1 - Math.exp(-dt * r);
 const isMobile = () => innerWidth <= 760;
@@ -921,15 +923,24 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let sweep = 0;
   function lazyTextures(sel: Entry | undefined): void {
     if (sel && !sel.hasCover) applyCover(sel);
-    // Only books in bookcases near the camera get a spine texture, a few per frame, so 100+ books do not stall startup.
+    // Only books in bookcases near the camera get a spine texture, within a time budget per frame, so 100+ books do not stall startup.
     const reach = camDist * FOV_T * camera.aspect + pitch * 0.6;
     // Every couple of seconds, spines far beyond the view are released, so panning a big wall does not keep them all in memory.
     if (++sweep % 120 === 0) for (const e of entries.values()) if (e.hasSpine && e !== sel && Math.abs(caseX(e.caseIndex, pitch) - panCur) > reach * 3) evictSpine(e);
-    let budget = 6;
+    // Nearest bookcases first, so what is on screen gets its spine before what is merely close; a time budget keeps frames smooth.
+    // The list is only built while something is missing, so an idle shelf allocates nothing per frame.
+    let todo: {e: Entry; d: number}[] | null = null;
     for (const e of entries.values()) {
-      if (e.hasSpine || Math.abs(caseX(e.caseIndex, pitch) - panCur) > reach) continue;
+      const d = Math.abs(caseX(e.caseIndex, pitch) - panCur);
+      if (e.hasSpine || d > reach) continue;
+      (todo ??= []).push({e, d});
+    }
+    if (!todo) return;
+    todo.sort((a, c) => a.d - c.d);
+    const start = performance.now();
+    for (const {e} of todo) {
       applySpine(e);
-      if (--budget === 0) break;
+      if (performance.now() - start > SPINE_BUDGET_MS) break;
     }
   }
   function tick(): void {
