@@ -5,14 +5,14 @@ import {state} from '../state';
 import {matches} from '../search';
 import {LIGHTS} from '../presets';
 import {createRoom} from './room';
-import {tintFor} from './tint';
 import {createWood} from './wood';
 import {DEPTH, PLINTH_H, createWallBuilder, innerWidthFor, widthBucket} from './wallBuild';
 import {createPicking} from './picking';
+import {stepBook, type MotionContext, type MotionResult} from './bookMotion';
 import {createBookTextures} from './bookTextures';
-import {MAT, type Entry} from './entry';
+import type {Entry} from './entry';
 import {SETTLE_EPS, aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
-import {approach, createFrameLoop, ease, needsAnotherFrame} from './loop';
+import {approach, createFrameLoop, needsAnotherFrame} from './loop';
 import {caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, type SectionInfo, type Wall} from './wall';
 
 export interface ShelfHooks {
@@ -228,7 +228,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   });
 
   /* ---------- loop ---------- */
-  const tmpC = new THREE.Color();
+  /** Reused every frame: what stepping the books found. */
+  const motion: MotionResult = {moved: 0, shadow: false};
+  const ctx: MotionContext = {dt: 0, sel: undefined, target: null, filtering: false, hover: null, pointerX: 0, pointerY: 0, picked: state.picked};
   /** One frame. Returns whether another is needed: false puts the loop to sleep until something wakes it. */
   function tick(): boolean {
     if (!visible) return false;
@@ -264,80 +266,18 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       filterKey = fk;
       entries.forEach((e) => (e.match = matches(e.b, state.q, state.status, state.section?.genres ?? null)));
     }
-    entries.forEach((e) => {
-      const isSel = sel === e;
-      const match = e.match;
-      const picked = state.picked.has(e.b.id);
-      // A warm glow on every face marks books chosen in Select mode, and a softer one the books a search or filter found.
-      const glow = picked ? 0.45 : filtering && match && !sel ? 0.28 : 0;
-      if (picked !== e.picked || glow !== e.glow) {
-        e.picked = picked;
-        e.glow = glow;
-        e.mats.forEach((m, i) => {
-          if (i === MAT.cover) return; // the cover face keeps its own glow
-          m.emissive.setHex(glow ? 0xf2b650 : 0x000000);
-          m.emissiveIntensity = glow;
-        });
-        moved++;
-      }
-      const p = e.grp.position;
-      let tx = e.home.x;
-      let ty = e.home.y;
-      let tz = e.home.z;
-      let rY = 0;
-      let rX = 0;
-      let sc = 1;
-      let rxy: number;
-      let rz: number;
-      if (isSel && st) {
-        const clear = p.z - e.b.d / 2 > 0.65;
-        tx = st.pos.x;
-        ty = st.pos.y;
-        tz = st.pos.z;
-        if (clear) {
-          sc = st.s;
-          rY = -Math.PI / 2 + pointer.sx * 0.3;
-          rX = pointer.sy * 0.15;
-        }
-        rz = 7;
-        rxy = clear ? 6 : 1.0;
-      } else {
-        if (!sel && picking.hover() === e.b.id) {
-          ty += 0.1;
-          tz += 0.18;
-        } else if (!sel && ((filtering && match) || e.picked)) {
-          ty += 0.1;
-          tz += 0.32;
-        }
-        const far = p.z > e.home.z + 0.5;
-        rxy = far ? 9 : 10;
-        rz = far ? 3.5 : 10;
-      }
-      const ox = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.rotation.z + e.grp.scale.x;
-      p.x += (tx - p.x) * ease(dt, rxy);
-      p.y += (ty - p.y) * ease(dt, rxy);
-      p.z += (tz - p.z) * ease(dt, rz);
-      e.grp.rotation.y += (rY - e.grp.rotation.y) * ease(dt, 6);
-      e.grp.rotation.x += (rX - e.grp.rotation.x) * ease(dt, 6);
-      e.grp.rotation.z += ((isSel ? 0 : e.lean) - e.grp.rotation.z) * ease(dt, 6);
-      const s = e.grp.scale.x;
-      e.grp.scale.setScalar(s + (sc - s) * ease(dt, 6));
-      const nx = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.rotation.z + e.grp.scale.x;
-      if (Math.abs(nx - ox) > 1e-5) {
-        moved++;
-        // A hover or search lift is too small to be worth redrawing every book into the shadow map.
-        if (isSel) shadowDirty = true;
-      }
-      const tint = tintFor({isSelected: isSel, anySelected: !!sel, filtering, matches: match});
-      tmpC.setHex(tint);
-      const diff = Math.abs(e.tint.r - tmpC.r) + Math.abs(e.tint.g - tmpC.g) + Math.abs(e.tint.b - tmpC.b);
-      if (diff === 0) return;
-      // Snap the last sliver so the easing ends and the loop can go idle.
-      if (diff < 0.002) e.tint.copy(tmpC);
-      else e.tint.lerp(tmpC, ease(dt, 8));
-      moved++;
-      for (let i = 0; i < e.mats.length; i++) e.mats[i]?.color.copy(e.base[i] as THREE.Color).multiply(e.tint);
-    });
+    motion.moved = 0;
+    motion.shadow = false;
+    ctx.dt = dt;
+    ctx.sel = sel;
+    ctx.target = st;
+    ctx.filtering = filtering;
+    ctx.hover = picking.hover();
+    ctx.pointerX = pointer.sx;
+    ctx.pointerY = pointer.sy;
+    for (const e of entries.values()) stepBook(e, ctx, motion);
+    moved += motion.moved;
+    if (motion.shadow) shadowDirty = true;
     const fading = textures.stepFades(dt);
     moved += fading;
     // An idle shelf costs nothing: draw only while something is still easing or was just changed, then sleep.
