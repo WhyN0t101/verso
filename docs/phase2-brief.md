@@ -77,6 +77,57 @@ Cautions where the skills disagree with this project:
 - `majidmanzarpour/threejs-qa-release` is built for games, relies on a packaged inspection script and force-install commands, and is too heavy here. Do not run it.
 - Skip the skills on R3F, shaders, postprocessing, animation, WebGPU and game systems; they do not apply to this app.
 
+## Targets (proposed; the owner confirms before work starts)
+
+"Smooth" needs numbers. The first four are today's measured values at 500 books with default settings (second audit, November 2026, software rendering), proposed as ceilings that must not rise. The rest are to be measured in Part A and then agreed.
+
+- Idle `requestAnimationFrame` callbacks per second: 0.
+- Draw calls at 500 books: at most 503. At 60 books: at most 255.
+- Textures at 500 books: at most 130.
+- Gzip JavaScript: at most 200.7 kB without a stated reason.
+- Frame time at 500 books on a mid-range laptop and on a phone: to be measured, then set.
+- First paint and time to first interactive shelf: to be measured, then set.
+- Texture memory after panning a 500-book wall: to be measured, then set.
+
+## Real-device pass
+
+Every number so far comes from software rendering, which is useful for comparing two builds but says nothing about a real GPU. Before phase 2 is called done, run the `?books=500` scenario once on an older laptop and once on a phone, and record in this file or in the pull request: the device, browser, viewport, `stats()` readings, a rough frame-rate observation, and anything that stuttered. Say plainly when this was not possible.
+
+## Before merging
+
+Merging to `main` deploys to Cloudflare. Before each phase 2 pull request is merged, someone loads the branch locally at `?books=60` and `?books=500`, checks the console, and exercises hover, selection, pan, search, resize, list view and the export card.
+
+## Rollback
+
+Every risky change (shadow tiers, adaptive quality, level of detail, any later instancing) sits behind one small reversible switch, such as a constant or a setting, so a bad deploy can be backed out without reverting a whole series of commits. A change without such a switch says in its commit body how it is reverted.
+
+## Order of work
+
+1. Part A: measurement and baseline.
+2. Cheap wins with the biggest effect: shadow frustum, shadow caster count, texture placeholder on eviction.
+3. Quality of life that does not touch the render path.
+4. Structural changes (atlas, instancing, geometry sharing) only if the numbers justify them, after the owner decides the open questions above.
+
+## Working with agents (process lessons from phase 1)
+
+The rules are in `AGENTS.md` under Rules for agents. In short: disjoint file lists per agent and one owner per shared file; one integration branch, merged into each agent's branch after every batch; an independent audit after each round, with findings routed to the owning agent; fresh worktrees reuse the main folder's `node_modules`; archive a finished session so its worktree is released.
+
+## Carried-over leftovers from the phase 1 audits
+
+A checklist to schedule, not to bundle into unrelated commits. Each item needs the usual test or a stated reason for none.
+
+- [ ] Security headers: `public/_headers` has cache rules only. Consider `X-Content-Type-Options: nosniff` and a Content-Security-Policy for the app. No concrete hole exists (no `innerHTML`, `eval` or `document.write`).
+- [ ] Supported browsers: decide a target and state it in `README.md`. `AbortSignal.any` now has a fallback.
+- [ ] Untested glue: `ui/list.ts`, `ui/style.ts`, `scene/room.ts`, the wiring in `scene/shelf.ts` (what wakes the loop), `createWallBuilder`, `createWood`, `drawCard`, `spineCanvas`.
+- [ ] Long functions, split by job: `createShelf` (about 309 lines), `createWallBuilder.build` (about 140), `createBookTextures` (about 183), `drawCard` (about 149), `spineCanvas` (about 107).
+- [ ] Notes debounce: up to 300 ms of typing is lost if the page closes; flush on `pagehide`.
+- [ ] Export dialog: the blob URL is not revoked when the dialog closes.
+- [ ] `dominantTone` has no test (it needs a canvas).
+- [ ] `#exMsg` in `index.html` lacks `role="status"`.
+- [ ] Share card layout: the Story format leaves an empty band at the bottom and Square is top-aligned; decide whether to change them.
+- [ ] `public/models/painting.glb` is 325 KB; see the prop-model note above.
+- [ ] A real `webglcontextrestored` cannot be raised in node; only the wake wiring is tested, so confirm in a browser.
+
 ## Verification
 
 After each step: `npm run typecheck`, `npm test`, `npm run build`, and a line "Completed: what changed | gates | draw calls, geometries, textures, frame time, idle callbacks per second before and after".
