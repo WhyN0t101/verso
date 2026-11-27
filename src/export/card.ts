@@ -5,8 +5,10 @@ import {finishedLabel} from '../data/books';
 import {themeById, type ThemeId} from './themes';
 
 export type CardFormat = 'post' | 'story' | 'square';
-const SIZES: Record<CardFormat, [number, number]> = {post: [1080, 1350], story: [1080, 1920], square: [1080, 1080]};
+export const SIZES: Record<CardFormat, [number, number]> = {post: [1080, 1350], story: [1080, 1920], square: [1080, 1080]};
 const PLANK_H = 26;
+/** Margin around the card's text; the header baseline sits PAD + 8 from the top. */
+export const CARD_PAD = 84;
 
 /** Draws the shareable card. Fonts must already be loaded; `cover` must be same-origin so the canvas stays untainted. */
 export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | null, themeId: ThemeId = 'classic'): HTMLCanvasElement {
@@ -19,7 +21,7 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   const theme = themeById(themeId);
   theme.paint(g, W, H, b);
   const acc = theme.accent(b);
-  const pad = 84;
+  const pad = CARD_PAD;
   g.textBaseline = 'alphabetic';
   g.font = `500 28px ${SANS}`;
   g.fillStyle = acc;
