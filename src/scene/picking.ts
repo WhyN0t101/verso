@@ -95,6 +95,8 @@ export function createPicking(d: PickingDeps): Picking {
         if (!id) return;
         down.long = true;
         d.hooks.onLongPress(id);
+        // This runs from a timer, not an input event, and the hook changes what the shelf shows (Select mode glow): wake after it.
+        d.wake();
       }, LONG_PRESS_MS);
     }
     canvas.setPointerCapture(ev.pointerId);
