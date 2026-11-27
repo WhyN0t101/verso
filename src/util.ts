@@ -30,7 +30,8 @@ export function rng(seed: number): () => number {
 }
 
 export function slug(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'book';
+  // Letters and digits of any script: an ASCII-only rule turned every Cyrillic or Japanese title into "book".
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'book';
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {
