@@ -13,6 +13,7 @@ async function get<T>(params: Record<string, string>, signal: AbortSignal, path 
   const r = await fetch(`${path}?` + new URLSearchParams(params), {signal});
   if (import.meta.env.DEV && r.status === 503 && (await r.clone().json().catch(() => null))?.error === 'worker-down') throw new WorkerDownError();
   if (!r.ok) throw new Error(`search api ${r.status}`);
+  // Our own Worker answers this and has already checked every upstream field, so the reply shape is trusted here.
   return r.json() as Promise<T>;
 }
 

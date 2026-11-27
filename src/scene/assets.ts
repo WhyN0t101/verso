@@ -9,8 +9,9 @@ const ENV_SHARE = 0.55;
 
 function grade(root: THREE.Object3D): void {
   root.traverse((o) => {
-    const mats = (o as THREE.Mesh).material;
-    for (const m of Array.isArray(mats) ? mats : mats ? [mats] : []) {
+    if (!(o instanceof THREE.Mesh)) return;
+    const mats: THREE.Material | THREE.Material[] = o.material;
+    for (const m of Array.isArray(mats) ? mats : [mats]) {
       if (!(m instanceof THREE.MeshStandardMaterial) || m.userData.graded) continue;
       m.userData.graded = true;
       m.color.multiply(GRADE);

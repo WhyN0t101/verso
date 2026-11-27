@@ -6,6 +6,7 @@ export const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a
 export function $<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`#${id} missing from index.html`);
+  // Callers name the element type they expect for this id; the document cannot say.
   return el as T;
 }
 

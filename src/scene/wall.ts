@@ -106,12 +106,12 @@ interface FlatRow {
 
 /** Packs sections end to end into rows; a bookend marks each change of section when it fits on the row. */
 function flow(sections: Section[], innerW: number): {rows: FlatRow[]; sectionOf: Map<string, string>} {
-  const rows: FlatRow[] = [{items: [], bookends: []}];
+  let row: FlatRow = {items: [], bookends: []};
+  const rows: FlatRow[] = [row];
   const sectionOf = new Map<string, string>();
   let x = 0;
   sections.forEach((s, si) => {
     s.books.forEach((b, bi) => {
-      let row = rows[rows.length - 1] as FlatRow;
       if (si > 0 && bi === 0 && row.items.length && x + BOOKEND_W + b.w <= innerW - ROW_MARGIN) {
         row.bookends.push(x);
         x += BOOKEND_W + ROW_GAP;

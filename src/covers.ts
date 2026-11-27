@@ -85,7 +85,8 @@ const settled = new Map<string, HTMLImageElement | null>();
 const MAX_SETTLED = 64;
 function remember(url: string, img: HTMLImageElement | null): void {
   settled.set(url, img);
-  if (settled.size > MAX_SETTLED) settled.delete(settled.keys().next().value as string);
+  const oldest = settled.keys().next();
+  if (settled.size > MAX_SETTLED && !oldest.done) settled.delete(oldest.value);
 }
 
 export interface LoadOptions {
@@ -210,9 +211,9 @@ export function dominantTone(img: HTMLImageElement): Tone {
     }
   }
   if (best < 0) return {h: 30, s: 6, l: clamp(Math.round((greyL / Math.max(grey, 1)) * 100), 0, 100)};
-  const w = weight[best] as number;
-  const h = (Math.atan2((sy[best] as number) / w, (sx[best] as number) / w) * 180) / Math.PI;
-  return {h: Math.round((h + 360) % 360), s: Math.round(((sSum[best] as number) / w) * 100), l: Math.round(((lSum[best] as number) / w) * 100)};
+  const w = weight[best] ?? 1;
+  const h = (Math.atan2((sy[best] ?? 0) / w, (sx[best] ?? 0) / w) * 180) / Math.PI;
+  return {h: Math.round((h + 360) % 360), s: Math.round(((sSum[best] ?? 0) / w) * 100), l: Math.round(((lSum[best] ?? 0) / w) * 100)};
 }
 
 function rgbToHsl(r8: number, g8: number, b8: number): [number, number, number] {
