@@ -58,3 +58,29 @@ describe('model loader', () => {
     expect(loadAsync).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('loader import failure', () => {
+  it('is not kept: a failed fetch of the loader chunk lets the next model try again', async () => {
+    vi.resetModules();
+    let imports = 0;
+    vi.doMock('three/examples/jsm/loaders/GLTFLoader.js', () => {
+      if (imports++ === 0) throw new Error('chunk failed');
+      return {
+        GLTFLoader: class {
+          setMeshoptDecoder() {
+            return this;
+          }
+          loadAsync() {
+            const g = new THREE.Group();
+            g.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+            return Promise.resolve({scene: g});
+          }
+        },
+      };
+    });
+    const {loadModel} = await import('../src/scene/assets');
+    await expect(loadModel('vase', 1)).rejects.toThrow();
+    await expect(loadModel('vase', 1)).resolves.toBeInstanceOf(THREE.Group);
+    vi.doUnmock('three/examples/jsm/loaders/GLTFLoader.js');
+  });
+});
