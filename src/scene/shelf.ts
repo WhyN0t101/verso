@@ -801,6 +801,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     } else placeCamera(false);
   }
 
+  /** Scratch for selTarget, which runs every frame while a book is open. The result is only read within that frame. */
+  const selPos = new THREE.Vector3();
+  const selDir = new THREE.Vector3();
+  const selResult = {pos: selPos, s: 1};
   /** Where the pulled-out book rests: centred in the area the detail panel leaves free. */
   function selTarget(b: Book): {pos: THREE.Vector3; s: number} {
     const dist = camDist * 0.5;
@@ -814,11 +818,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const fy = (top + bot) / 2;
     const freeW = mob ? w : w - pw;
     const freeH = bot - top;
-    const v = new THREE.Vector3((fx / w) * 2 - 1, 1 - (fy / h) * 2, 0.5).unproject(camera).sub(camera.position).normalize();
-    const pos = camera.position.clone().addScaledVector(v, dist);
+    const v = selDir.set((fx / w) * 2 - 1, 1 - (fy / h) * 2, 0.5).unproject(camera).sub(camera.position).normalize();
+    selPos.copy(camera.position).addScaledVector(v, dist);
     const unit = (2 * dist * FOV_T) / h;
-    const s = clamp(Math.min((0.68 * freeH * unit) / b.h, (0.72 * freeW * unit) / b.d), 0.6, 2.4);
-    return {pos, s};
+    selResult.s = clamp(Math.min((0.68 * freeH * unit) / b.h, (0.72 * freeW * unit) / b.d), 0.6, 2.4);
+    return selResult;
   }
 
   /* ---------- pointer ---------- */
