@@ -107,7 +107,7 @@ h3{font:600 15px var(--serif);color:var(--ink);margin:26px 0 8px;padding-bottom:
 .coverrow img{width:56px;height:84px;object-fit:cover;border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.5);background:#000}
 .coverrow .btn{margin-top:0;padding:6px 10px;font-size:13px}
 .btn.icon{padding:0;width:var(--ctl);font-size:18px;line-height:1}
-label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;color:var(--ink);font:500 14px var(--sans)}
+label.btn{display:inline-flex;align-items:center;margin:0;text-transform:none;letter-spacing:0;color:var(--ink);font:500 14px var(--sans)}
 #menu{position:fixed;top:calc(var(--bar-h) - 6px);right:12px;z-index:25;min-width:190px;background:var(--walnut);border:1px solid rgba(201,162,74,.4);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 #menu button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:10px 12px;color:var(--ink);font:500 14px var(--sans);cursor:pointer}
 #menu button:hover{background:rgba(201,162,74,.14)}
