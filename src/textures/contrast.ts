@@ -22,8 +22,8 @@ export function hslToRgb(h: number, s: number, l: number): [number, number, numb
   return [f(0), f(8), f(4)];
 }
 
-export const INK_LIGHT = {css: '#fff8ec', rgb: [255, 248, 236] as const};
-export const INK_DARK = {css: '#1a1209', rgb: [26, 18, 9] as const};
+const INK_LIGHT = {css: '#fff8ec', rgb: [255, 248, 236] as const};
+const INK_DARK = {css: '#1a1209', rgb: [26, 18, 9] as const};
 export const MIN_CONTRAST = 4.5;
 
 export interface SpineScheme {

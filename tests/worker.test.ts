@@ -290,3 +290,126 @@ describe('cover choices', () => {
     expect((await call('/api/covers?title=x')).status).toBe(400);
   });
 });
+
+describe('/api/cover content type', () => {
+  it('never serves an upstream type a browser could run (svg, html)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response('<svg onload="alert(1)"/>', {headers: {'Content-Type': 'image/svg+xml'}})));
+    expect((await call('/api/cover?id=77')).status).toBe(404);
+  });
+
+  it('marks images nosniff', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(new Uint8Array([1]), {headers: {'Content-Type': 'image/jpeg'}})));
+    expect((await call('/api/cover?id=78')).headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+});
+
+describe('/api/search result fields come from an untrusted upstream', () => {
+  const doc = (extra: Record<string, unknown>) => ({key: '/works/OL5W', title: 'T', author_name: ['A'], ...extra});
+  const search = async (docs: unknown[], q: string) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({docs}));
+    return (await call(`/api/search?q=${q}`)).body as {results: {title: string; year: number | null; cover: string | null}[]};
+  };
+
+  it('builds a cover path only from a positive integer id', async () => {
+    const r = await search([doc({cover_i: '7&size=L'}), doc({key: '/works/OL6W', title: 'U', cover_i: 12.5}), doc({key: '/works/OL7W', title: 'V', cover_i: 0}), doc({key: '/works/OL8W', title: 'W', cover_i: 42})], 'covers1');
+    expect(r.results.map((x) => x.cover)).toEqual([null, null, null, '/api/cover?id=42']);
+  });
+
+  it('skips results whose title is not text, keeps only numeric years, and caps the title length', async () => {
+    const r = await search([doc({title: {x: 1}}), doc({key: '/works/OL6W', title: 'Long ' + 'x'.repeat(500), first_publish_year: '1999'}), doc({key: '/works/OL7W', title: 'Dated', first_publish_year: 1951})], 'fields1');
+    expect(r.results).toHaveLength(2);
+    expect(r.results[0]?.title.length).toBeLessThanOrEqual(150);
+    expect(r.results.map((x) => x.year)).toEqual([null, 1951]);
+  });
+});
+
+describe('/api/cover and /api/covers failure paths', () => {
+  it('refuses an oversized image without caching it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(new Uint8Array(4 * 1024 * 1024 + 1), {headers: {'Content-Type': 'image/jpeg'}})));
+    const r = await call('/api/cover?id=500');
+    expect(r.status).toBe(502);
+    expect(cache.store.size).toBe(0);
+  });
+
+  it('answers HEAD like GET instead of rejecting it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(new Uint8Array([1]), {headers: {'Content-Type': 'image/png'}})));
+    const res = await worker.fetch(new Request('https://verso.test/api/cover?id=501', {method: 'HEAD'}), {ASSETS: assets}, ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('turns an upstream failure of the cover search into a 502 that is not cached', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({}, 500));
+    const r = await call('/api/covers?title=Dune&author=Herbert');
+    expect(r.status).toBe(502);
+    expect(r.headers.get('Cache-Control')).toBe('no-store');
+    expect(cache.store.size).toBe(0);
+  });
+
+  it('keeps a miss short-lived when no edition has a cover', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((u) => (String(u).includes('editions') ? json({entries: [{title: 'Dune'}]}) : json({docs: [{key: '/works/OL1W', title: 'Dune', author_name: ['Frank Herbert'], edition_count: 3}]})));
+    const r = await call('/api/covers?title=Dune&author=Herbert');
+    expect(r.body).toEqual({choices: []});
+    expect(r.headers.get('Cache-Control')).toContain('s-maxage=3600');
+    expect(r.headers.get('Cache-Control')).not.toContain('86400');
+  });
+});
+
+describe('work and cover replies from an untrusted upstream', () => {
+  it('survives a work record with wrongly typed subjects, authors and description', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({title: 'T', subjects: [1, null, 'Fantasy'], authors: 'nope', description: {value: 5}}));
+    const r = await call('/api/search?work=OL77W', {GOOGLE_BOOKS_API_KEY: 'k'});
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({genre: 'Fantasy', summary: ''});
+  });
+
+  it('survives a Google reply with wrongly typed items', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((u) => (String(u).includes('googleapis') ? json({items: [null, {volumeInfo: 3}, {volumeInfo: {description: {x: 1}}}, {volumeInfo: {description: 'Fine summary.'}}]}) : json({title: 'T'})));
+    const r = await call('/api/search?work=OL78W', {GOOGLE_BOOKS_API_KEY: 'k'});
+    expect(r.body).toMatchObject({summary: 'Fine summary.', source: 'google'});
+  });
+
+  it('survives cover search replies with wrongly typed docs, entries and covers', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((u) =>
+      String(u).includes('editions')
+        ? json({entries: [null, 7, {title: 'Dune', covers: 'x'}, {title: 'Dune', covers: [0, 'a', 42]}, {title: 5, covers: [43], publish_date: 1999}]})
+        : json({docs: [null, 'x', {key: 5}, {key: '/works/OL1W', author_name: [1, 'Frank Herbert'], edition_count: '9'}]}),
+    );
+    const r = await call('/api/covers?title=Dune&author=Herbert');
+    expect(r.status).toBe(200);
+    expect((r.body as {choices: {id: number}[]}).choices.map((c) => c.id)).toEqual([42, 43]);
+  });
+
+  it('survives an editions reply whose entries is not a list', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((u) => (String(u).includes('editions') ? json({entries: 5}) : json({docs: [{key: '/works/OL1W', author_name: ['Frank Herbert']}]})));
+    const r = await call('/api/covers?title=Dune&author=Herbert');
+    expect(r.body).toEqual({choices: []});
+  });
+});
+
+describe('/api/cover size cap while reading', () => {
+  const MB = 1024 * 1024;
+
+  it('rejects on a declared Content-Length without reading the body', async () => {
+    let pulled = 0;
+    const body = new ReadableStream({pull(c) { pulled++; c.enqueue(new Uint8Array(1024)); }});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(body, {headers: {'Content-Type': 'image/jpeg', 'Content-Length': String(5 * MB)}})));
+    const r = await call('/api/cover?id=600');
+    expect(r.status).toBe(502);
+    expect(pulled).toBeLessThan(3);
+  });
+
+  it('stops reading a stream that has no length once it passes the cap', async () => {
+    let pulled = 0;
+    const body = new ReadableStream({pull(c) { pulled++; c.enqueue(new Uint8Array(MB)); }});
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(body, {headers: {'Content-Type': 'image/jpeg'}})));
+    const r = await call('/api/cover?id=601');
+    expect(r.status).toBe(502);
+    expect(pulled).toBeLessThan(10);
+    expect(cache.store.size).toBe(0);
+  });
+
+  it('still passes a normal cover through byte for byte', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(new Uint8Array([9, 8, 7]), {headers: {'Content-Type': 'image/jpeg'}})));
+    expect(new Uint8Array(await (await call('/api/cover?id=602')).res.arrayBuffer())).toEqual(new Uint8Array([9, 8, 7]));
+  });
+});

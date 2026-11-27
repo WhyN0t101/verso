@@ -8,10 +8,18 @@ export function renderList(onOpen: (id: string) => void): void {
   const ul = $('listView');
   ul.replaceChildren();
   const shown = state.books.filter((b) => matches(b, state.q, state.status, state.section?.genres ?? null));
-  for (const b of shown) ul.appendChild(row(b, onOpen));
+  for (const b of shown) {
+    // role=list needs listitem children, and a button must not take that role itself.
+    const item = document.createElement('div');
+    item.setAttribute('role', 'listitem');
+    item.appendChild(row(b, onOpen));
+    ul.appendChild(item);
+  }
   if (!shown.length) {
+    // Inside role=list every child must be a listitem.
     const p = document.createElement('p');
     p.className = 'list-empty';
+    p.setAttribute('role', 'listitem');
     p.textContent = state.books.length ? 'No book matches your search.' : 'Your shelf is empty. Add your first book to start.';
     ul.appendChild(p);
   }
@@ -21,6 +29,8 @@ function row(b: Book, onOpen: (id: string) => void): HTMLElement {
   const li = document.createElement('button');
   li.className = 'list-row' + (state.picked.has(b.id) ? ' picked' : '');
   li.type = 'button';
+  // Select mode ticks rows; the colour alone is not enough for a screen reader.
+  if (state.selecting) li.setAttribute('aria-pressed', String(state.picked.has(b.id)));
   const title = document.createElement('span');
   title.className = 'list-title';
   title.textContent = b.title;
@@ -30,6 +40,11 @@ function row(b: Book, onOpen: (id: string) => void): HTMLElement {
   const stars = document.createElement('span');
   stars.className = 'list-stars';
   stars.textContent = b.rating ? '★'.repeat(b.rating) : '';
+  // A plain span cannot take a name (ARIA 1.2); role=img can, and keeps the glyphs from being read aloud.
+  if (b.rating) {
+    stars.setAttribute('role', 'img');
+    stars.setAttribute('aria-label', `${b.rating} ${b.rating === 1 ? 'star' : 'stars'}`);
+  }
   li.append(title, meta, stars);
   li.addEventListener('click', () => onOpen(b.id));
   return li;

@@ -1,4 +1,4 @@
-:root{--serif:Literata,Georgia,serif;--sans:"Atkinson Hyperlegible Next",system-ui,sans-serif;--wall:#18272b;--panel:#223439;--oak:#b9824a;--acc:#f2b650;--ink:#eee7d6;--mute:#a7b6b2;--line:rgba(238,231,214,.14);--r:8px;--r-lg:12px;--ctl:36px;--bar-h:64px;--brass:var(--brass);--walnut:linear-gradient(180deg,rgba(46,31,20,.92),rgba(27,18,12,.92));--on-acc:#2a1b0c;--danger:#ff9d8f;--tint:var(--panel);color-scheme:dark}
+:root{--serif:Literata,Georgia,serif;--sans:"Atkinson Hyperlegible Next",system-ui,sans-serif;--wall:#18272b;--panel:#223439;--oak:#b9824a;--acc:#f2b650;--ink:#eee7d6;--mute:#a7b6b2;--line:rgba(238,231,214,.14);--r:8px;--r-lg:12px;--ctl:36px;--bar-h:64px;--walnut:linear-gradient(180deg,rgba(46,31,20,.92),rgba(27,18,12,.92));--on-acc:#2a1b0c;--danger:#ff9d8f;--tint:var(--panel);color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);font-family:var(--sans);-webkit-tap-highlight-color:transparent}
 body{background:var(--bg,radial-gradient(ellipse at 50% 28%,#2a4348 0%,#18272b 58%,#0f1a1d 100%))}
@@ -26,7 +26,7 @@ canvas#gl.pointer{cursor:pointer}
 .chip{display:inline-flex;align-items:center;gap:7px;background:none;color:var(--mute);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font:500 14px var(--sans);cursor:pointer}
 .chip:hover{color:var(--ink)}
 .chip.on{color:var(--ink);border-color:var(--ink);background:rgba(238,231,214,.1)}
-#q::placeholder{color:var(--mute)}
+input::placeholder,textarea::placeholder{color:var(--mute);opacity:1}
 #q:focus{border-color:var(--acc)}
 .btn{background:rgba(255,255,255,.07);color:var(--ink);border:1px solid var(--line);border-radius:var(--r);height:var(--ctl);padding:0 14px;font:500 14px var(--sans);cursor:pointer;white-space:nowrap}
 .btn:hover{background:rgba(255,255,255,.14)}
@@ -69,7 +69,7 @@ h3{font:600 15px var(--serif);color:var(--ink);margin:26px 0 8px;padding-bottom:
 #pNotes:focus{border-color:var(--acc)}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .overlay{position:fixed;inset:0;z-index:20;background:rgba(10,18,20,.74);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px;width:min(460px,100%);max-height:92vh;overflow:auto}
+.card{background:var(--panel);border:1px solid rgba(201,162,74,.3);box-shadow:0 18px 60px rgba(0,0,0,.45);border-radius:var(--r-lg);padding:20px;width:min(460px,100%);max-height:92vh;overflow:auto}
 .card h2{font-family:var(--serif);margin:0 0 14px;font-size:24px}
 .card label{display:block;font:500 13px var(--sans);color:var(--mute);margin:12px 0 6px}
 .card input,.card textarea{width:100%;background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:var(--r);color:var(--ink);padding:9px 12px;font:500 14px var(--sans)}
@@ -91,7 +91,7 @@ h3{font:600 15px var(--serif);color:var(--ink);margin:26px 0 8px;padding-bottom:
 #toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);z-index:40;background:var(--panel);border:1px solid var(--line);padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;max-width:92vw;text-align:center}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #listView{position:fixed;inset:0;z-index:3;overflow-y:auto;padding:72px 16px 24px;display:flex;flex-direction:column;gap:6px;max-width:720px;margin:0 auto}
-.list-row{display:grid;grid-template-columns:1fr auto;gap:2px 12px;text-align:left;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;color:var(--ink);font:500 14px var(--sans);cursor:pointer}
+.list-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:2px 12px;text-align:left;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;color:var(--ink);font:500 14px var(--sans);cursor:pointer}
 .list-row:hover{background:rgba(255,255,255,.11)}
 .list-title{font:700 17px var(--serif)}
 .list-meta{grid-column:1;color:var(--mute)}
@@ -107,7 +107,7 @@ h3{font:600 15px var(--serif);color:var(--ink);margin:26px 0 8px;padding-bottom:
 .coverrow img{width:56px;height:84px;object-fit:cover;border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.5);background:#000}
 .coverrow .btn{margin-top:0;padding:6px 10px;font-size:13px}
 .btn.icon{padding:0;width:var(--ctl);font-size:18px;line-height:1}
-label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;color:var(--ink);font:500 14px var(--sans)}
+label.btn{display:inline-flex;align-items:center;margin:0;text-transform:none;letter-spacing:0;color:var(--ink);font:500 14px var(--sans)}
 #menu{position:fixed;top:calc(var(--bar-h) - 6px);right:12px;z-index:25;min-width:190px;background:var(--walnut);border:1px solid rgba(201,162,74,.4);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 #menu button{display:block;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:10px 12px;color:var(--ink);font:500 14px var(--sans);cursor:pointer}
 #menu button:hover{background:rgba(201,162,74,.14)}
@@ -136,7 +136,7 @@ label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;col
 #sectionBar{display:none;position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:5}
 #sectionName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60vw}
 #sectionCurrent{display:flex;gap:10px;align-items:baseline;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:var(--r);padding:8px 16px;font:500 14px var(--sans);cursor:pointer;max-width:92vw}
-#sectionCount{color:var(--mute);font-weight:400;font-size:13px}
+#sectionCount{color:var(--mute);font-weight:400;font-size:13px;white-space:nowrap}
 #sectionSheet{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:6;width:min(360px,92vw);max-height:50vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:4px}
 body.list-mode #sections,body.list-mode #sectionBar,body.list-mode #sectionSheet{display:none!important}
 @media (max-width:1000px){

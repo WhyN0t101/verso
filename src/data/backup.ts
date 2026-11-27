@@ -1,9 +1,12 @@
 import type {Book, Settings} from '../types';
-import {sanitizeBook} from './books';
+import {asRecord} from '../../shared/untrusted';
+import {sanitizeBooks} from './books';
 import {sanitizeSettings} from './settings';
 
 const APP = 'verso';
 const VERSION = 1;
+/** A real shelf is hundreds; the cap stops a crafted file from freezing the tab while it is sanitised and laid out. */
+const MAX_BOOKS = 10_000;
 
 export function buildBackup(books: Book[], settings: Settings): string {
   return JSON.stringify({app: APP, version: VERSION, exportedAt: new Date().toISOString(), books, settings}, null, 2);
@@ -24,10 +27,11 @@ export function parseBackup(text: string): ParsedBackup {
   } catch {
     throw new Error('That file is not valid JSON.');
   }
-  const o = data as {app?: unknown; version?: unknown; books?: unknown; settings?: unknown} | null;
-  if (!o || typeof o !== 'object' || o.app !== APP || !Array.isArray(o.books)) throw new Error('That file is not a Verso backup.');
+  const o = asRecord(data);
+  if (o.app !== APP || !Array.isArray(o.books)) throw new Error('That file is not a Verso backup.');
   if (typeof o.version === 'number' && o.version > VERSION) throw new Error('That backup was made by a newer version of Verso.');
-  const books = o.books.map(sanitizeBook).filter((b): b is Book => !!b);
+  if (o.books.length > MAX_BOOKS) throw new Error('That backup holds too many books.');
+  const books = sanitizeBooks(o.books);
   return {books, settings: o.settings ? sanitizeSettings(o.settings) : null, skipped: o.books.length - books.length};
 }
 
@@ -45,4 +49,9 @@ export function mergeBooks(current: Book[], incoming: Book[]): {books: Book[]; a
     byId.set(b.id, b);
   }
   return {books: [...byId.values()], added, updated};
+}
+
+/** What an import produces. While the shelf is still the untouched demo seed it is replaced, not merged into. */
+export function applyImport(current: Book[], seeded: boolean, incoming: Book[]): {books: Book[]; added: number; updated: number} {
+  return mergeBooks(seeded ? [] : current, incoming);
 }

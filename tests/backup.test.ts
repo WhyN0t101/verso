@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {paletteOf} from '../src/textures/draw';
-import {buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
+import {applyImport, buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
 import {applyStatus, finishedLabel, isoDate, makeBook, sanitizeBook, todayIso, updateBook} from '../src/data/books';
 import {DEFAULT_SETTINGS, sanitizeSettings} from '../src/data/settings';
 
@@ -172,5 +172,94 @@ describe('appearance', () => {
   });
   it('falls back to the Study look for unknown values', () => {
     expect(sanitizeSettings({wood: 'plastic', light: 'strobe', background: {kind: 'preset', id: 'nope'}})).toMatchObject({wood: 'honey', light: 'lamplit', background: {id: 'study'}});
+  });
+});
+
+describe('cover path pattern', () => {
+  it('accepts only the id (and optional size) of our own cover route', () => {
+    for (const c of ['/api/cover?id=1', '/api/cover?id=12&size=L']) expect(sanitizeBook({title: 'X', cover: c})?.cover).toBe(c);
+    for (const c of ['/api/cover?', '/api/cover?id=abc', '/api/cover?id=1&x=../../y', '/api/cover?id=1#frag', '/api/cover?id=1\n'])
+      expect(sanitizeBook({title: 'X', cover: c})?.cover).toBeUndefined();
+  });
+});
+
+describe('duplicate ids', () => {
+  it('gives later books with a repeated id a fresh one, in a backup', () => {
+    const text = JSON.stringify({app: 'verso', version: 1, books: [{id: 'same', title: 'A'}, {id: 'same', title: 'B'}]});
+    const {books} = parseBackup(text);
+    expect(books.map((b) => b.title)).toEqual(['A', 'B']);
+    expect(books[0]?.id).toBe('same');
+    expect(new Set(books.map((b) => b.id)).size).toBe(2);
+  });
+});
+
+describe('sanitizeBook text fields', () => {
+  it('trims author and genre like makeBook does, so a blank genre becomes Unsorted', () => {
+    const b = sanitizeBook({title: 'X', author: '  Ann  ', genre: '   '});
+    expect(b?.author).toBe('Ann');
+    expect(b?.genre).toBe('Unsorted');
+    expect(sanitizeBook({title: 'X', genre: ' Fantasy '})?.genre).toBe('Fantasy');
+  });
+
+  it('keeps only a plausible whole-number year', () => {
+    expect(sanitizeBook({title: 'X', year: 1951.4})?.year).toBe(1951);
+    for (const year of [1e12, -1e9, '1999', NaN]) expect(sanitizeBook({title: 'X', year})?.year).toBeUndefined();
+  });
+
+  it('survives hostile values of every field without throwing', () => {
+    const b = sanitizeBook({title: 'X', author: 5, genre: {}, summary: [], notes: null, rating: 'high', tone: {h: 'a'}, status: 7, finishedOn: 3, id: {}});
+    expect(b).toMatchObject({title: 'X', author: '', genre: 'Unsorted', summary: '', notes: '', rating: 0});
+    expect(b?.tone).toBeUndefined();
+    expect(b?.id).toMatch(/^b/);
+  });
+});
+
+describe('parseBackup refusals and edges', () => {
+  it('says so for broken JSON, other JSON, and a backup from a newer version', () => {
+    expect(() => parseBackup('{oops')).toThrow(/not valid JSON/);
+    for (const text of ['[]', 'null', '"x"', '{"app":"other","books":[]}', '{"app":"verso"}']) expect(() => parseBackup(text)).toThrow(/not a Verso backup/);
+    expect(() => parseBackup('{"app":"verso","version":2,"books":[]}')).toThrow(/newer version/);
+  });
+
+  it('accepts a backup with no version and no settings, and leaves the current settings alone', () => {
+    const p = parseBackup('{"app":"verso","books":[{"title":"A"}]}');
+    expect(p.books).toHaveLength(1);
+    expect(p.settings).toBeNull();
+    expect(p.skipped).toBe(0);
+  });
+});
+
+describe('mergeBooks edges', () => {
+  it('keeps the current order, appends new books, and changes nothing for an empty import', () => {
+    const a = book('A');
+    const b = book('B');
+    const out = mergeBooks([a, b], [book('C')]);
+    expect(out.books.map((x) => x.title)).toEqual(['A', 'B', 'C']);
+    const same = mergeBooks([a, b], []);
+    expect(same).toMatchObject({added: 0, updated: 0});
+    expect(same.books).toEqual([a, b]);
+  });
+});
+
+describe('backup size limit', () => {
+  it('refuses a file with an absurd number of books before sanitising them', () => {
+    const books = Array.from({length: 10_001}, () => ({title: 'x'}));
+    expect(() => parseBackup(JSON.stringify({app: 'verso', version: 1, books}))).toThrow(/too many books/);
+    expect(parseBackup(JSON.stringify({app: 'verso', version: 1, books: books.slice(0, 10_000)})).books).toHaveLength(10_000);
+  });
+});
+
+describe('applyImport', () => {
+  it('replaces the untouched demo shelf instead of mixing the import into it', () => {
+    const demo = [book('Demo 1'), book('Demo 2')];
+    const out = applyImport(demo, true, [book('Mine')]);
+    expect(out.books.map((b) => b.title)).toEqual(['Mine']);
+  });
+
+  it('merges into a real shelf, keeping what is there', () => {
+    const mine = [book('A')];
+    const out = applyImport(mine, false, [book('B')]);
+    expect(out.books.map((b) => b.title)).toEqual(['A', 'B']);
+    expect(out.added).toBe(1);
   });
 });

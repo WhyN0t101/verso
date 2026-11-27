@@ -7,10 +7,10 @@ const MIN_ROWS = 2;
 const ROW_GAP = 0.025;
 const ROW_MARGIN = 0.12;
 /** Every genre is its own section until there are more than this many; then the smallest fold into Other. */
-export const MAX_SECTIONS = 12;
-export const OTHER = 'Other';
+const MAX_SECTIONS = 12;
+const OTHER = 'Other';
 /** Width of the slim bookend that separates two sections on a shared shelf. */
-export const BOOKEND_W = 0.1;
+const BOOKEND_W = 0.1;
 
 export interface Placed {
   b: Book;
@@ -106,12 +106,12 @@ interface FlatRow {
 
 /** Packs sections end to end into rows; a bookend marks each change of section when it fits on the row. */
 function flow(sections: Section[], innerW: number): {rows: FlatRow[]; sectionOf: Map<string, string>} {
-  const rows: FlatRow[] = [{items: [], bookends: []}];
+  let row: FlatRow = {items: [], bookends: []};
+  const rows: FlatRow[] = [row];
   const sectionOf = new Map<string, string>();
   let x = 0;
   sections.forEach((s, si) => {
     s.books.forEach((b, bi) => {
-      let row = rows[rows.length - 1] as FlatRow;
       if (si > 0 && bi === 0 && row.items.length && x + BOOKEND_W + b.w <= innerW - ROW_MARGIN) {
         row.bookends.push(x);
         x += BOOKEND_W + ROW_GAP;

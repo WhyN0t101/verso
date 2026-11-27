@@ -5,8 +5,10 @@ import {finishedLabel} from '../data/books';
 import {themeById, type ThemeId} from './themes';
 
 export type CardFormat = 'post' | 'story' | 'square';
-const SIZES: Record<CardFormat, [number, number]> = {post: [1080, 1350], story: [1080, 1920], square: [1080, 1080]};
+export const SIZES: Record<CardFormat, [number, number]> = {post: [1080, 1350], story: [1080, 1920], square: [1080, 1080]};
 const PLANK_H = 26;
+/** Margin around the card's text; the header baseline sits PAD + 8 from the top. */
+export const CARD_PAD = 84;
 
 /** Draws the shareable card. Fonts must already be loaded; `cover` must be same-origin so the canvas stays untainted. */
 export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | null, themeId: ThemeId = 'classic'): HTMLCanvasElement {
@@ -19,7 +21,7 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
   const theme = themeById(themeId);
   theme.paint(g, W, H, b);
   const acc = theme.accent(b);
-  const pad = 84;
+  const pad = CARD_PAD;
   g.textBaseline = 'alphabetic';
   g.font = `500 28px ${SANS}`;
   g.fillStyle = acc;
@@ -160,11 +162,26 @@ export function drawCard(b: Book, fmt: CardFormat, cover: HTMLImageElement | nul
 }
 
 function drawPlank(g: CanvasRenderingContext2D, x0: number, y: number, x1: number): void {
+  // The plank throws a soft shadow down the wall, so it reads as fixed in front of it.
+  const cast = g.createLinearGradient(0, y + PLANK_H, 0, y + PLANK_H + 46);
+  cast.addColorStop(0, 'rgba(0,0,0,.5)');
+  cast.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = cast;
+  g.fillRect(x0, y + PLANK_H, x1 - x0, 46);
   const grad = g.createLinearGradient(0, y, 0, y + PLANK_H);
   grad.addColorStop(0, '#9a6a3f');
   grad.addColorStop(1, '#5a3a1f');
   g.fillStyle = grad;
   g.fillRect(x0, y, x1 - x0, PLANK_H);
+  // Grain along the plank, from a fixed seed so a card renders the same each time.
+  let seed = 17;
+  for (let i = 0; i < 40; i++) {
+    seed = (seed * 9301 + 49297) % 233280;
+    g.fillStyle = i % 2 ? 'rgba(255,225,170,.08)' : 'rgba(30,15,5,.18)';
+    g.fillRect(x0 + (seed / 233280) * (x1 - x0), y + 4 + (i % 5) * 4, 40 + (i % 7) * 30, 1.5);
+  }
   g.fillStyle = 'rgba(255,230,180,.35)';
   g.fillRect(x0, y, x1 - x0, 3);
+  g.fillStyle = 'rgba(0,0,0,.35)';
+  g.fillRect(x0, y + PLANK_H - 3, x1 - x0, 3);
 }
