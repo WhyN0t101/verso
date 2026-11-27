@@ -31,4 +31,3 @@ describe('gesture maths', () => {
     expect(toNdc(210, 120, rect)).toEqual([1, -1]);
   });
 });
-});
