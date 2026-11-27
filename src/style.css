@@ -1,4 +1,4 @@
-:root{--serif:Literata,Georgia,serif;--sans:"Atkinson Hyperlegible Next",system-ui,sans-serif;--wall:#18272b;--panel:#223439;--oak:#b9824a;--acc:#f2b650;--ink:#eee7d6;--mute:#a7b6b2;--line:rgba(238,231,214,.14);--r:8px;--r-lg:12px;--ctl:36px;--bar-h:64px;--brass:var(--brass);--walnut:linear-gradient(180deg,rgba(46,31,20,.92),rgba(27,18,12,.92));--on-acc:#2a1b0c;--danger:#ff9d8f;--tint:var(--panel);color-scheme:dark}
+:root{--serif:Literata,Georgia,serif;--sans:"Atkinson Hyperlegible Next",system-ui,sans-serif;--wall:#18272b;--panel:#223439;--oak:#b9824a;--acc:#f2b650;--ink:#eee7d6;--mute:#a7b6b2;--line:rgba(238,231,214,.14);--r:8px;--r-lg:12px;--ctl:36px;--bar-h:64px;--walnut:linear-gradient(180deg,rgba(46,31,20,.92),rgba(27,18,12,.92));--on-acc:#2a1b0c;--danger:#ff9d8f;--tint:var(--panel);color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);font-family:var(--sans);-webkit-tap-highlight-color:transparent}
 body{background:var(--bg,radial-gradient(ellipse at 50% 28%,#2a4348 0%,#18272b 58%,#0f1a1d 100%))}
@@ -136,7 +136,7 @@ label.btn{display:inline-block;margin:0;text-transform:none;letter-spacing:0;col
 #sectionBar{display:none;position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:5}
 #sectionName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60vw}
 #sectionCurrent{display:flex;gap:10px;align-items:baseline;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:var(--r);padding:8px 16px;font:500 14px var(--sans);cursor:pointer;max-width:92vw}
-#sectionCount{color:var(--mute);font-weight:400;font-size:13px}
+#sectionCount{color:var(--mute);font-weight:400;font-size:13px;white-space:nowrap}
 #sectionSheet{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:6;width:min(360px,92vw);max-height:50vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:4px}
 body.list-mode #sections,body.list-mode #sectionBar,body.list-mode #sectionSheet{display:none!important}
 @media (max-width:1000px){
