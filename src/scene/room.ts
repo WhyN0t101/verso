@@ -134,7 +134,7 @@ export function createRoom(scene: THREE.Scene, anisotropy = 1): {layout(o: RoomL
   function clear(): void {
     for (const m of group.children.slice()) {
       // Sprites share one module-level geometry, and the bulb geometry is reused: only the floor plane is ours to free.
-      if ((m as THREE.Mesh).isMesh && (m as THREE.Mesh).geometry !== bulbGeo) (m as THREE.Mesh).geometry.dispose();
+      if (m instanceof THREE.Mesh && m.geometry !== bulbGeo) m.geometry.dispose();
       group.remove(m);
     }
   }
@@ -159,7 +159,7 @@ export function createRoom(scene: THREE.Scene, anisotropy = 1): {layout(o: RoomL
     for (const m of props.children.slice()) {
       if (m === lampLight) continue;
       // Model copies share geometry and materials with each other; only the rug plane is ours to free.
-      if ((m as THREE.Mesh).isMesh && !m.userData.keep) (m as THREE.Mesh).geometry.dispose();
+      if (m instanceof THREE.Mesh && !m.userData.keep) m.geometry.dispose();
       props.remove(m);
     }
     lampLight.intensity = 0;

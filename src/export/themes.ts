@@ -142,5 +142,6 @@ export const THEMES: Theme[] = [
   },
 ];
 
+// The `!` is safe: THEMES is the literal list above and is never empty, which noUncheckedIndexedAccess cannot know.
 export const themeById = (id: ThemeId): Theme => THEMES.find((t) => t.id === id) ?? THEMES[0]!;
 
