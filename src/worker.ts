@@ -1,4 +1,5 @@
 import {mapGenre} from '../shared/genres';
+import {asRecord, isInt, isRecord, records, strings, text} from '../shared/untrusted';
 
 /**
  * Cloudflare Worker: serves /api/search and /api/cover; everything else is static assets.
@@ -38,13 +39,7 @@ const DEFAULT_COVER_SIZE = 'M';
 
 /* ---------- untrusted JSON ---------- */
 
-// Everything an upstream sends is `unknown` until one of these has checked it; the app never casts a reply.
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const asRecord = (v: unknown): Record<string, unknown> => (isRecord(v) ? v : {});
-const records = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter(isRecord) : []);
-const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '');
-const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
+// Everything an upstream sends is `unknown` until a helper from shared/untrusted.ts has checked it; the app never casts a reply.
 /** The same rule /api/cover enforces on its id. */
 const isCoverId = (v: unknown): v is number => isInt(v) && v > 0 && v < 1e12;
 

@@ -1,4 +1,5 @@
 import type {Book, Settings} from '../types';
+import {asRecord} from '../../shared/untrusted';
 import {sanitizeBooks, makeBook} from './books';
 import {SEED} from './seed';
 import {sanitizeSettings, DEFAULT_SETTINGS} from './settings';
@@ -27,8 +28,8 @@ function readKey(key: string): unknown {
 }
 
 export function load(): Stored {
-  const cur = readKey(KEY) as {books?: unknown[]; settings?: unknown} | null;
-  if (cur && Array.isArray(cur.books)) {
+  const cur = asRecord(readKey(KEY));
+  if (Array.isArray(cur.books)) {
     return {books: sanitizeBooks(cur.books), settings: sanitizeSettings(cur.settings)};
   }
   // The prototype stored a bare array under another key; carry that shelf over.

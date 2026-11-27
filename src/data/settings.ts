@@ -1,14 +1,13 @@
 import type {Settings} from '../types';
-import {BACKGROUNDS, LIGHTS, WOODS} from '../presets';
+import {asRecord} from '../../shared/untrusted';
+import {BACKGROUNDS, isLightId, isWoodId} from '../presets';
 
 /** The named "Study" look: honey oak under a lamp, against a blue-green wall. */
 export const STUDY = {wood: 'honey', light: 'lamplit', background: {kind: 'preset', id: 'study'}} as const satisfies Pick<Settings, 'wood' | 'light' | 'background'>;
 
 export const DEFAULT_SETTINGS: Settings = {wood: STUDY.wood, light: STUDY.light, background: {...STUDY.background}};
 
-const WOOD_IDS = Object.keys(WOODS);
-const LIGHT_IDS = Object.keys(LIGHTS);
-const BG_IDS = BACKGROUNDS.map((b) => b.id);
+const BG_IDS: readonly unknown[] = BACKGROUNDS.map((b) => b.id);
 // The image goes into a CSS url("…"), so only plain base64 is accepted; anything else could add a second url().
 const IMAGE_DATA = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 /** A 1600 px JPEG from the style dialog is well under this; it keeps an import from filling localStorage. */
@@ -28,15 +27,15 @@ export function encodeWithinLimit(encode: (quality: number) => string): string {
 }
 
 export function sanitizeSettings(x: unknown): Settings {
-  const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
-  const bg = (o.background && typeof o.background === 'object' ? o.background : {}) as Record<string, unknown>;
+  const o = asRecord(x);
+  const bg = asRecord(o.background);
   const background: Settings['background'] =
     bg.kind === 'image' && typeof bg.data === 'string' && bg.data.length <= MAX_IMAGE_CHARS && IMAGE_DATA.test(bg.data)
       ? {kind: 'image', data: bg.data}
-      : {kind: 'preset', id: BG_IDS.includes(bg.id as string) ? (bg.id as string) : 'study'};
+      : {kind: 'preset', id: typeof bg.id === 'string' && BG_IDS.includes(bg.id) ? bg.id : 'study'};
   return {
-    wood: WOOD_IDS.includes(o.wood as string) ? (o.wood as Settings['wood']) : STUDY.wood,
-    light: LIGHT_IDS.includes(o.light as string) ? (o.light as Settings['light']) : STUDY.light,
+    wood: isWoodId(o.wood) ? o.wood : STUDY.wood,
+    light: isLightId(o.light) ? o.light : STUDY.light,
     background,
     ...(o.groupByGenre === true ? {groupByGenre: true} : {}),
     ...(o.props === true ? {props: true} : {}),

@@ -1,4 +1,5 @@
 import type {Book, BookDraft, Status, Tone} from '../types';
+import {asRecord} from '../../shared/untrusted';
 import {clamp, hash, rng} from '../util';
 
 export const UNSORTED = 'Unsorted';
@@ -12,7 +13,7 @@ export function isoDate(v: unknown): string | null {
   if (!m) return null;
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
   const real = new Date(Date.UTC(y, mo - 1, d));
-  return real.getUTCFullYear() === y && real.getUTCMonth() === mo - 1 && real.getUTCDate() === d ? (v as string) : null;
+  return real.getUTCFullYear() === y && real.getUTCMonth() === mo - 1 && real.getUTCDate() === d ? m[0] : null;
 }
 
 /** Today in the reader's own calendar, not UTC. */
@@ -94,8 +95,7 @@ const num = (v: unknown, fallback: number, lo: number, hi: number): number =>
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '');
 
 function sanitizeTone(v: unknown): Tone | undefined {
-  if (!v || typeof v !== 'object') return undefined;
-  const t = v as Record<string, unknown>;
+  const t = asRecord(v);
   if (typeof t.h !== 'number' || typeof t.s !== 'number' || typeof t.l !== 'number') return undefined;
   return {h: num(t.h, 0, 0, 360), s: num(t.s, 0, 0, 100), l: num(t.l, 0, 0, 100)};
 }
@@ -119,8 +119,7 @@ export function sanitizeBooks(list: unknown[]): Book[] {
 
 /** Coerces untrusted JSON (localStorage, backup file) into a valid Book, or null when unusable. */
 export function sanitizeBook(x: unknown): Book | null {
-  if (!x || typeof x !== 'object') return null;
-  const o = x as Record<string, unknown>;
+  const o = asRecord(x);
   const title = str(o.title, 200).trim();
   if (!title) return null;
   const book: Book = {
