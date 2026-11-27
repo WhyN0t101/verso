@@ -16,8 +16,10 @@ export function renderList(onOpen: (id: string) => void): void {
     ul.appendChild(item);
   }
   if (!shown.length) {
+    // Inside role=list every child must be a listitem.
     const p = document.createElement('p');
     p.className = 'list-empty';
+    p.setAttribute('role', 'listitem');
     p.textContent = state.books.length ? 'No book matches your search.' : 'Your shelf is empty. Add your first book to start.';
     ul.appendChild(p);
   }
@@ -38,7 +40,11 @@ function row(b: Book, onOpen: (id: string) => void): HTMLElement {
   const stars = document.createElement('span');
   stars.className = 'list-stars';
   stars.textContent = b.rating ? '★'.repeat(b.rating) : '';
-  if (b.rating) stars.setAttribute('aria-label', `${b.rating} ${b.rating === 1 ? 'star' : 'stars'}`);
+  // A plain span cannot take a name (ARIA 1.2); role=img can, and keeps the glyphs from being read aloud.
+  if (b.rating) {
+    stars.setAttribute('role', 'img');
+    stars.setAttribute('aria-label', `${b.rating} ${b.rating === 1 ? 'star' : 'stars'}`);
+  }
   li.append(title, meta, stars);
   li.addEventListener('click', () => onOpen(b.id));
   return li;
