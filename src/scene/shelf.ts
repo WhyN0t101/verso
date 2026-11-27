@@ -222,7 +222,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     t.anisotropy = maxAniso;
     return t;
   }
-  let wood = woodTexture(WOODS.walnut);
+  let wood: THREE.CanvasTexture | null = woodTexture(WOODS.walnut);
   const woodMat = new THREE.MeshStandardMaterial({map: wood, bumpMap: wood, bumpScale: 0.8, roughness: 0.72, metalness: 0});
   const backMat = new THREE.MeshStandardMaterial({map: wood, color: 0x7a6050, roughness: 0.9});
   const pagesTex = new THREE.CanvasTexture(pagesCanvas());
@@ -281,13 +281,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       woodMat.color.copy(tint);
       backMat.map = photo.map;
       backMat.color.copy(tint).multiplyScalar(0.5);
+      // The painted stand-in is no longer used by any material; free its texture.
+      wood?.dispose();
+      wood = null;
     } else {
       const old = wood;
       wood = woodTexture(WOODS[woodId]);
       woodMat.map = wood;
       woodMat.bumpMap = wood;
       backMat.map = wood;
-      old.dispose();
+      old?.dispose();
     }
     woodMat.needsUpdate = backMat.needsUpdate = true;
     const L = LIGHTS[lightId];
