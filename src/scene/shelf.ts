@@ -83,6 +83,8 @@ const WIDTHS = [3.6, 4.2, 4.8];
 const FASCIA_H = 0.6;
 /** Crown moulding above the fascia: two stepped slabs. */
 const CORNICE_H = 0.14;
+/** How far the photographed wood is stained towards a preset's colour: 0 keeps the photo, 1 is the preset's flat colour. */
+const DEFAULT_STAIN = 0.55;
 /** World units covered by one repeat of the wood grain texture. */
 const WOOD_TILE = 1.9;
 /** How a binding looks and feels: corner radius, and how glossy the spine is. Paperbacks are soft and matt, jackets glossy. */
@@ -271,8 +273,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     if (photo) {
       // The photographed grain is tinted so its average colour becomes the preset's wood colour.
       const base = new THREE.Color(WOODS[woodId].base);
-      // Only part of the way to the preset colour: the photo keeps its own depth and the stain does not turn it to paint.
-      const tint = new THREE.Color(1, 1, 1).lerp(new THREE.Color(base.r / photo.mean.r, base.g / photo.mean.g, base.b / photo.mean.b), 0.55);
+      // Part of the way to the preset colour, so the photo keeps its own depth; the dark woods go further (see WoodPreset.stain).
+      const tint = new THREE.Color(1, 1, 1).lerp(new THREE.Color(base.r / photo.mean.r, base.g / photo.mean.g, base.b / photo.mean.b), WOODS[woodId].stain ?? DEFAULT_STAIN);
       woodMat.map = photo.map;
       woodMat.normalMap = photo.normal;
       woodMat.bumpMap = null;
