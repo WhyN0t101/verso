@@ -1,5 +1,5 @@
 import type {Book, Settings} from '../types';
-import {sanitizeBook, makeBook} from './books';
+import {sanitizeBooks, makeBook} from './books';
 import {SEED} from './seed';
 import {sanitizeSettings, DEFAULT_SETTINGS} from './settings';
 
@@ -26,17 +26,15 @@ function readKey(key: string): unknown {
   }
 }
 
-const cleanBooks = (a: unknown[]): Book[] => a.map(sanitizeBook).filter((b): b is Book => !!b);
-
 export function load(): Stored {
   const cur = readKey(KEY) as {books?: unknown[]; settings?: unknown} | null;
   if (cur && Array.isArray(cur.books)) {
-    return {books: cleanBooks(cur.books), settings: sanitizeSettings(cur.settings)};
+    return {books: sanitizeBooks(cur.books), settings: sanitizeSettings(cur.settings)};
   }
   // The prototype stored a bare array under another key; carry that shelf over.
   const legacy = readKey(LEGACY_KEY);
   if (Array.isArray(legacy)) {
-    const books = cleanBooks(legacy);
+    const books = sanitizeBooks(legacy);
     if (books.length) return {books, settings: {...DEFAULT_SETTINGS}};
   }
   if (memory) return memory;
@@ -47,7 +45,8 @@ export function load(): Stored {
 export function save(data: Stored): boolean {
   memory = data;
   try {
-    localStorage.setItem(KEY, JSON.stringify({version: 1, ...data}));
+    localStorage.setItem(KEY, // `seeded` is a runtime flag; spreading the whole object would write it into the saved shelf.
+    JSON.stringify({version: 1, books: data.books, settings: data.settings}));
     return true;
   } catch (err) {
     console.warn('could not save to localStorage', err);

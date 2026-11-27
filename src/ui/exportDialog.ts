@@ -12,9 +12,19 @@ let blob: Blob | null = null;
 let url: string | null = null;
 let renderId = 0;
 
+/** Draws the card for the open book. A failure is shown in the dialog instead of leaving "Preparing…" up for good. */
 async function render(): Promise<void> {
-  if (!book) return;
   const id = ++renderId;
+  try {
+    await draw(id);
+  } catch (err) {
+    console.warn('card export failed', err);
+    if (id === renderId) $('exMsg').textContent = 'Could not draw the image. Close this and try again.';
+  }
+}
+
+async function draw(id: number): Promise<void> {
+  if (!book) return;
   $('exMsg').textContent = 'Preparing your image…';
   await fontsReady;
   // The large size is only worth its bytes here; fall back to the medium one the shelf already has.
@@ -22,7 +32,8 @@ async function render(): Promise<void> {
   if (id !== renderId) return;
   const canvas = drawCard(book, state.fmt, cover, state.theme);
   const out = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
-  if (id !== renderId || !out) return;
+  if (id !== renderId) return;
+  if (!out) throw new Error('canvas.toBlob returned no image');
   blob = out;
   if (url) URL.revokeObjectURL(url);
   url = URL.createObjectURL(out);

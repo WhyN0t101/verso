@@ -2,7 +2,7 @@ import type {LightId, Settings, WoodId} from '../types';
 import {state, persist} from '../state';
 import {$, toast} from '../util';
 import {BACKGROUNDS, LIGHTS, WOODS, imageBackgroundCss} from '../presets';
-import {STUDY} from '../data/settings';
+import {STUDY, encodeWithinLimit} from '../data/settings';
 
 const MAX_IMAGE_SIDE = 1600;
 
@@ -22,7 +22,7 @@ async function imageToDataUrl(file: File): Promise<string> {
   if (!g) throw new Error('2D canvas unavailable');
   g.drawImage(bmp, 0, 0, c.width, c.height);
   bmp.close();
-  return c.toDataURL('image/jpeg', 0.82);
+  return encodeWithinLimit((q) => c.toDataURL('image/jpeg', q));
 }
 
 function option(group: HTMLElement, id: string, label: string, swatchCss: string | null, on: boolean): HTMLButtonElement {

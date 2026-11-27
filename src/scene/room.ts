@@ -133,7 +133,8 @@ export function createRoom(scene: THREE.Scene, anisotropy = 1): {layout(o: RoomL
 
   function clear(): void {
     for (const m of group.children.slice()) {
-      if ((m as THREE.Mesh).geometry && (m as THREE.Mesh).geometry !== bulbGeo) (m as THREE.Mesh).geometry.dispose();
+      // Sprites share one module-level geometry, and the bulb geometry is reused: only the floor plane is ours to free.
+      if ((m as THREE.Mesh).isMesh && (m as THREE.Mesh).geometry !== bulbGeo) (m as THREE.Mesh).geometry.dispose();
       group.remove(m);
     }
   }

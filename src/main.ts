@@ -261,11 +261,16 @@ $('add').addEventListener('click', () => {
 });
 $('viewToggle').addEventListener('click', () => setListMode(!listMode));
 
-$('q').addEventListener('input', (ev) => {
-  state.q = (ev.target as HTMLInputElement).value.trim().toLowerCase();
+/** The search text or status filter changed: close the open book, repaint the list and pan to the first match. */
+function filterChanged(): void {
   if (state.sel) deselect();
   if (listMode) renderList(activate);
   shelf?.revealMatch();
+}
+
+$('q').addEventListener('input', (ev) => {
+  state.q = (ev.target as HTMLInputElement).value.trim().toLowerCase();
+  filterChanged();
 });
 function renderStatusChips(): void {
   const box = $('statusChips');
@@ -292,9 +297,7 @@ function renderStatusChips(): void {
     btn.addEventListener('click', () => {
       state.status = value;
       renderStatusChips();
-      if (state.sel) deselect();
-      if (listMode) renderList(activate);
-      shelf?.revealMatch();
+      filterChanged();
     });
     box.appendChild(btn);
   }

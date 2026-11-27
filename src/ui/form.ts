@@ -214,17 +214,21 @@ export function initForm(onSave: (draft: BookDraft, editingId: string | null) =>
 }
 
 let submitting = false;
+/** Bumped whenever the dialog opens or closes, so a save that was waiting on the cover colour can tell it was cancelled. */
+let dialogEpoch = 0;
 
 async function submit(): Promise<void> {
   const title = f('fTitle').value.trim();
   // The cover colour can take seconds; a second press meanwhile must not add the book twice.
   if (!title || submitting) return;
   submitting = true;
+  const epoch = dialogEpoch;
   try {
     await coverReady;
   } finally {
     submitting = false;
   }
+  if (epoch !== dialogEpoch) return;
   const year = Number.parseInt(f('fYear').value, 10);
   const draft: BookDraft = {
     title,
@@ -239,6 +243,7 @@ async function submit(): Promise<void> {
 }
 
 export function closeForm(): void {
+  dialogEpoch++;
   searchCtl?.abort();
   workCtl?.abort();
   coversCtl?.abort();
@@ -247,6 +252,7 @@ export function closeForm(): void {
 }
 
 export function openForm(b: Book | null): void {
+  dialogEpoch++;
   editing = b ? b.id : null;
   touched.clear();
   $('formTitle').textContent = b ? 'Edit book' : 'Add a book';
