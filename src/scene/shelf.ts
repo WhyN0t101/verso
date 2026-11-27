@@ -14,6 +14,7 @@ import {contactShadow, loadModel, type ModelName} from './assets';
 import {packBookFaces} from './faces';
 import {layoutPlate} from './plate';
 import {tintFor} from './tint';
+import {approach, createFrameLoop, ease, needsAnotherFrame} from './loop';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
 export interface ShelfHooks {
@@ -50,6 +51,8 @@ export interface Shelf {
   retone(b: Book): void;
   /** Pan to a bookcase by index. */
   focusCase(index: number): void;
+  /** Starts the frame loop if it is asleep. Call after changing state the shelf reads (selection, search, filter, picks). */
+  wake(): void;
   setVisible(on: boolean): void;
 }
 
@@ -121,7 +124,8 @@ const FACE_GLOW = 0.72;
 /** Milliseconds per frame spent drawing spine textures; the nearest bookcase is done first. */
 const SPINE_BUDGET_MS = 8;
 
-const ease = (dt: number, r: number) => 1 - Math.exp(-dt * r);
+/** Distance under which an easing value lands on its target, so the loop can sleep; far below a pixel. */
+const SETTLE_EPS = 1e-4;
 const isMobile = () => innerWidth <= 760;
 
 /** Average colour of an image, read from a tiny copy of it. */
@@ -162,6 +166,19 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   /** Set whenever something outside the animation loop changes what is on screen. */
   let force = true;
+  let last = performance.now();
+  // The loop sleeps when the picture is final and wakes on input or any change; see tick().
+  const loop = createFrameLoop(() => tick());
+  /** Starts the loop if it sleeps. The clock restarts so the first frame after a rest is not one long step. */
+  function wake(): void {
+    if (!loop.running()) last = performance.now();
+    loop.wake();
+  }
+  /** Something changed what is on screen: draw once more, and make sure the loop is awake to do it. */
+  function dirty(): void {
+    force = true;
+    wake();
+  }
   let filterKey = '';
   let shadowDirty = false;
   let prevSel: Entry | undefined;
@@ -268,7 +285,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     .catch((err: unknown) => console.warn('wood photo unavailable', err));
 
   function applySettings(): void {
-    force = true;
+    dirty();
     const {wood: woodId, light: lightId} = state.settings;
     if (photo) {
       // The photographed grain is tinted so its average colour becomes the preset's wood colour.
@@ -495,7 +512,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     m.needsUpdate = true;
     e.base[MAT.spine]?.set(0xffffff);
     e.hasSpine = true;
-    force = true;
+    dirty();
   }
   /** Puts a picture on a cover-face material, with the glow that keeps it true to the picture. */
   function faceLook(m: THREE.MeshStandardMaterial, tex: THREE.Texture): void {
@@ -513,7 +530,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     faceLook(m, getTex(e.b, 'cover'));
     e.base[MAT.cover]?.setScalar(FACE_ALBEDO);
     e.hasCover = true;
-    force = true;
+    dirty();
     const b = e.b;
     const k = `${b.id}:${b.v}:cover`;
     if (!b.cover || realCovers.has(k)) return;
@@ -582,7 +599,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     }
     e.hasSpine = false;
     e.hasCover = false;
-    force = true;
+    dirty();
   }
 
   interface Fade {
@@ -607,7 +624,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     plane.position.x = e.b.w / 2 + 0.002;
     host.add(plane);
     fades.add({e, plane, mat, tex, generated, t: 0});
-    force = true;
+    dirty();
   }
 
   function endFade(f: Fade): void {
@@ -619,7 +636,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const m = f.e.mats[MAT.cover];
     if (m && entries.get(f.e.b.id) === f.e) faceLook(m, f.tex);
     f.generated?.dispose();
-    force = true;
+    dirty();
   }
 
   /** Put back before its cover arrived: stop the request, and start over the next time it is picked. */
@@ -649,7 +666,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   function buildShelf(): void {
     const build = ++shelfBuild;
     decorRoot.clear();
-    force = true;
+    dirty();
     filterKey = '';
     renderer.shadowMap.needsUpdate = true;
     const prev = new Map<string, {p: THREE.Vector3; r: THREE.Euler; s: number}>();
@@ -719,7 +736,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
               m.position.set(x, y, -DEPTH / 2 + 0.65);
               m.rotation.y = turn;
               decorRoot.add(m, contactShadow(kind.height * 0.8, kind.height * 0.8, m.position.x, y + 0.02, m.position.z));
-              force = true;
+              dirty();
             },
             (err: unknown) => console.warn(`model ${kind.name} unavailable`, err),
           );
@@ -820,7 +837,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       camDist = f.dist;
       camCY = f.cy;
     }
-    force = true;
+    dirty();
   }
 
   /** Tells the page what the wall holds and where the camera is heading; only when that changed. */
@@ -836,7 +853,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   function onResize(): void {
     if (!visible) return;
-    force = true;
+    dirty();
     const w = innerWidth;
     const h = innerHeight;
     renderer.setSize(w, h, false);
@@ -887,6 +904,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let down: {x: number; y: number; lx: number; lt: number; vx: number; moved: number; long: boolean} | null = null;
   let pressTimer = 0;
   canvas.addEventListener('pointerdown', (ev) => {
+    wake();
     down = {x: ev.clientX, y: ev.clientY, lx: ev.clientX, lt: ev.timeStamp, vx: 0, moved: 0, long: false};
     clearTimeout(pressTimer);
     if (ev.pointerType !== 'mouse') {
@@ -901,6 +919,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     canvas.setPointerCapture(ev.pointerId);
   });
   canvas.addEventListener('pointermove', (ev) => {
+    wake();
     pointer.x = (ev.clientX / innerWidth) * 2 - 1;
     pointer.y = (ev.clientY / innerHeight) * 2 - 1;
     if (down) {
@@ -925,6 +944,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     hooks.onHover(e ? e.b.title : null, ev.clientX + 14, ev.clientY + 14);
   });
   canvas.addEventListener('pointerup', (ev) => {
+    wake();
     if (!down) return;
     clearTimeout(pressTimer);
     const {moved, vx, long} = down;
@@ -940,6 +960,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     down = null;
   });
   canvas.addEventListener('pointerleave', () => {
+    wake();
     hover = null;
     prefetchCover(undefined);
     hooks.onHover(null, 0, 0);
@@ -949,6 +970,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     'wheel',
     (ev) => {
       if (panMax > 0) {
+        wake();
         ev.preventDefault();
         const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
         panTarget = clamp(panTarget + d * 0.012, 0, panMax);
@@ -959,7 +981,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
 
   /* ---------- loop ---------- */
   const tmpC = new THREE.Color();
-  let last = performance.now();
   /** Gives a spine back its flat colour and frees its texture, once its bookcase is far from the camera. */
   function evictSpine(e: Entry): void {
     const m = e.mats[MAT.spine];
@@ -997,9 +1018,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       if (performance.now() - start > SPINE_BUDGET_MS) break;
     }
   }
-  function tick(): void {
-    requestAnimationFrame(tick);
-    if (!visible) return;
+  /** One frame. Returns whether another is needed: false puts the loop to sleep until something wakes it. */
+  function tick(): boolean {
+    if (!visible) return false;
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
@@ -1007,9 +1028,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     const px = pointer.sx;
     const py = pointer.sy;
     const pc = panCur;
-    pointer.sx += (pointer.x - pointer.sx) * ease(dt, 4);
-    pointer.sy += (pointer.y - pointer.sy) * ease(dt, 4);
-    panCur = reducedMotion ? panTarget : panCur + (panTarget - panCur) * ease(dt, 10);
+    pointer.sx = approach(pointer.sx, pointer.x, 4, dt, SETTLE_EPS);
+    pointer.sy = approach(pointer.sy, pointer.y, 4, dt, SETTLE_EPS);
+    panCur = reducedMotion ? panTarget : approach(panCur, panTarget, 10, dt, SETTLE_EPS);
     // Reframe when the bookcase the camera is heading for has a different height (rows trimmed or added).
     const heading = nearestCase(panTarget, pitch, wall.cases.length);
     if (heading !== framedCase) {
@@ -1020,8 +1041,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     }
     const cd = camDist;
     const cc = camCY;
-    camDist = reducedMotion ? camDistT : camDist + (camDistT - camDist) * ease(dt, 5);
-    camCY = reducedMotion ? camCYT : camCY + (camCYT - camCY) * ease(dt, 5);
+    camDist = reducedMotion ? camDistT : approach(camDist, camDistT, 5, dt, SETTLE_EPS);
+    camCY = reducedMotion ? camCYT : approach(camCY, camCYT, 5, dt, SETTLE_EPS);
     moved += Math.abs(pointer.sx - px) + Math.abs(pointer.sy - py) + Math.abs(panCur - pc) + Math.abs(camDist - cd) + Math.abs(camCY - cc);
     const camY = camCY + 2 * camDist * FOV_T * 0.035;
     camera.position.set(panCur + pointer.sx * 0.5, camY - pointer.sy * 0.3, camDist);
@@ -1040,7 +1061,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       key.target.position.set(cx, 0, 0);
       key.target.updateMatrixWorld();
       shadowDirty = true;
-      force = true;
+      dirty();
     }
     emitView();
     const filtering = !!(state.q || state.status || state.section);
@@ -1130,14 +1151,15 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       moved++;
       if (f.t >= 1 || entries.get(f.e.b.id) !== f.e) endFade(f);
     }
-    // An idle shelf costs nothing: draw only while something is still easing or was just changed.
-    if (!moved && !force) return;
+    // An idle shelf costs nothing: draw only while something is still easing or was just changed, then sleep.
+    if (!needsAnotherFrame({moved, forced: force, fades: fades.size})) return false;
     force = false;
     if (shadowDirty) {
       renderer.shadowMap.needsUpdate = true;
       shadowDirty = false;
     }
     renderer.render(scene, camera);
+    return true;
   }
 
   if (import.meta.env.DEV) {
@@ -1165,6 +1187,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         return corners;
       },
       stats: () => ({...renderer.info.render, textures: renderer.info.memory.textures}),
+      /** True when no frame is scheduled: the shelf is at rest. */
+      idle: () => !loop.running(),
       bookScreenPos(i: number) {
         const e = [...entries.values()][i];
         if (!e) return null;
@@ -1175,8 +1199,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
 
   addEventListener('resize', onResize);
+  // Every state change the page makes (select, search, filter, pick, import) starts with input, so any input wakes the loop.
+  for (const type of ['pointerdown', 'keydown', 'input', 'change', 'click']) addEventListener(type, wake, {capture: true, passive: true});
   onResize();
-  tick();
 
   return {
     rebuild: buildShelf,
@@ -1184,19 +1209,23 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     focusBook(id) {
       const c = wall.caseOf.get(id);
       if (c !== undefined) panTarget = caseX(c, pitch);
+      wake();
     },
     retone,
     focusCase(index) {
       panTarget = caseX(clampCase(index, wall.cases.length), pitch);
+      wake();
     },
     revealMatch() {
       if (!state.q && !state.status && !state.section) return;
       const c = firstMatchCase(wall, (b) => matches(b, state.q, state.status, state.section?.genres ?? null));
       if (c !== null) panTarget = caseX(c, pitch);
+      wake();
     },
+    wake,
     setVisible(on) {
       visible = on;
-      force = true;
+      dirty();
       canvas.classList.toggle('hidden', !on);
       if (on) {
         last = performance.now();

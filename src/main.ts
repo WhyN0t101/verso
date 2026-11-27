@@ -42,6 +42,7 @@ function select(id: string): void {
   const b = findBook(id);
   if (!b) return;
   state.sel = id;
+  shelf?.wake();
   showPanel(b);
   hint.style.opacity = '0';
   tip.style.opacity = '0';
@@ -56,6 +57,7 @@ function activate(id: string): void {
 
 function deselect(): void {
   state.sel = null;
+  shelf?.wake();
   hidePanel();
   hint.style.opacity = '1';
   document.body.classList.remove('book-open');
