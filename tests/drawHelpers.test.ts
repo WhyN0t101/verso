@@ -11,9 +11,22 @@ describe('wrapAll', () => {
     expect(wrapAll(g, 'one  two\nthree four', 80)).toEqual(['one two', 'three', 'four']);
   });
 
-  it('never drops a word that is wider than the line, and returns nothing for blank text', () => {
-    expect(wrapAll(g, 'extraordinarily short', 50)).toEqual(['extraordinarily', 'short']);
+  it('breaks a word wider than the line by character instead of letting it spill, and returns nothing for blank text', () => {
+    expect(wrapAll(g, 'extraordinarily short', 50)).toEqual(['extra', 'ordin', 'arily', 'short']);
     expect(wrapAll(g, '   ', 50)).toEqual([]);
+  });
+
+  it('wraps CJK text, which has no spaces, to the line width without losing a character', () => {
+    const text = '吾輩は猫である名前はまだ無い';
+    const out = wrapAll(g, text, 50);
+    expect(out.join('')).toBe(text);
+    for (const line of out) expect(Array.from(line).length * 10).toBeLessThanOrEqual(50);
+  });
+
+  it('never splits a surrogate pair when it breaks a word', () => {
+    const out = wrapAll(g, '😀😀😀😀', 40); // the stub measures UTF-16 units, so two emoji fit a line
+    expect(out.join('')).toBe('😀😀😀😀');
+    for (const line of out) expect(Array.from(line).every((ch) => ch === '😀')).toBe(true);
   });
 });
 
