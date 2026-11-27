@@ -11,6 +11,7 @@ import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
 import {contactShadow, loadModel, type ModelName} from './assets';
 import {packBookFaces} from './faces';
+import {layoutPlate} from './plate';
 import {tintFor} from './tint';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
@@ -406,13 +407,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     g.fillStyle = '#2a1b0c';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    let fs = c.height * 0.62;
-    g.font = `600 ${fs}px ${SERIF}`;
-    while (g.measureText(text).width > c.width - 48 && fs > 14) {
-      fs -= 2;
-      g.font = `600 ${fs}px ${SERIF}`;
-    }
-    g.fillText(text, c.width / 2, c.height / 2 + fs * 0.04);
+    // Long names wrap onto two lines instead of shrinking until they cannot be read.
+    const {lines, fontSize} = layoutPlate(text, c.width - 48, c.height, (s, size) => {
+      g.font = `600 ${size}px ${SERIF}`;
+      return g.measureText(s).width;
+    });
+    g.font = `600 ${fontSize}px ${SERIF}`;
+    const leading = fontSize * 1.08;
+    lines.forEach((line, i) => g.fillText(line, c.width / 2, c.height / 2 + (i - (lines.length - 1) / 2) * leading + fontSize * 0.04));
     const map = new THREE.CanvasTexture(c);
     map.colorSpace = THREE.SRGBColorSpace;
     map.anisotropy = maxAniso;
