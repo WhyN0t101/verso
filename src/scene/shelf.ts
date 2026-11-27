@@ -5,7 +5,7 @@ import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type {Book} from '../types';
 import {state} from '../state';
 import {matches} from '../search';
-import {clamp, hash, hsl, rng} from '../util';
+import {hash, hsl, rng} from '../util';
 import {LIGHTS} from '../presets';
 import {SERIF, bookKind, drawCover, paletteOf, sat, spineCanvas, spineLook, type BookKind} from '../textures/draw';
 import {largeCover, loadCover} from '../covers';
@@ -15,9 +15,10 @@ import {packBookFaces} from './faces';
 import {layoutPlate} from './plate';
 import {tintFor} from './tint';
 import {boardGeo, createWood} from './wood';
+import {createPicking} from './picking';
 import {SETTLE_EPS, aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
 import {approach, createFrameLoop, ease, needsAnotherFrame} from './loop';
-import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
+import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, type SectionInfo, type Wall} from './wall';
 
 export interface ShelfHooks {
   /** Book id picked by a click, or null for a click on empty space. */
@@ -212,7 +213,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let viewKey = '';
   /** What the jump list shows, rebuilt with the wall, so a frame only compares two strings. */
   let sectionsKey = '';
-  let hover: string | null = null;
   let visible = true;
   const entries = new Map<string, Entry>();
   const pickables: THREE.Mesh[] = [];
@@ -485,21 +485,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     realCovers.delete(`${e.b.id}:${e.b.v}:cover`);
   }
 
-  /** Hovering a book for a moment fetches its cover ahead of the click; moving on cancels it. */
-  let hoverCtl: AbortController | null = null;
-  let hoverTimer = 0;
-  function prefetchCover(e: Entry | undefined): void {
-    clearTimeout(hoverTimer);
-    hoverCtl?.abort();
-    hoverCtl = null;
-    const url = e?.b.cover;
-    if (!url) return;
-    hoverTimer = window.setTimeout(() => {
-      hoverCtl = new AbortController();
-      void loadCover(url, {signal: hoverCtl.signal});
-    }, 150);
-  }
-
   function buildShelf(): void {
     const build = ++shelfBuild;
     decorRoot.clear();
@@ -683,93 +668,18 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     } else placeCamera(false);
   }
 
-  /* ---------- pointer ---------- */
-  const ray = new THREE.Raycaster();
-  const ndc = new THREE.Vector2();
-  function pick(ev: PointerEvent): string | null {
-    const r = canvas.getBoundingClientRect();
-    ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObjects(pickables, false)[0];
-    return hit ? (hit.object.userData.id as string) : null;
-  }
-  let down: {x: number; y: number; lx: number; lt: number; vx: number; moved: number; long: boolean} | null = null;
-  let pressTimer = 0;
-  canvas.addEventListener('pointerdown', (ev) => {
-    wake();
-    down = {x: ev.clientX, y: ev.clientY, lx: ev.clientX, lt: ev.timeStamp, vx: 0, moved: 0, long: false};
-    clearTimeout(pressTimer);
-    if (ev.pointerType !== 'mouse') {
-      pressTimer = window.setTimeout(() => {
-        if (!down || down.moved >= 6) return;
-        const id = pick(ev);
-        if (!id) return;
-        down.long = true;
-        hooks.onLongPress(id);
-      }, 500);
-    }
-    canvas.setPointerCapture(ev.pointerId);
+  const picking = createPicking({
+    canvas,
+    camera,
+    rig,
+    pointer,
+    pickables,
+    bookOf: (id) => entries.get(id)?.b,
+    wall: () => ({pitch, caseCount: wall.cases.length}),
+    selected: () => !!state.sel,
+    hooks,
+    wake,
   });
-  canvas.addEventListener('pointermove', (ev) => {
-    wake();
-    pointer.x = (ev.clientX / innerWidth) * 2 - 1;
-    pointer.y = (ev.clientY / innerHeight) * 2 - 1;
-    if (down) {
-      const dx = ev.clientX - down.lx;
-      const dt = Math.max(ev.timeStamp - down.lt, 1);
-      down.lx = ev.clientX;
-      down.lt = ev.timeStamp;
-      down.moved = Math.max(down.moved, Math.hypot(ev.clientX - down.x, ev.clientY - down.y));
-      if (down.moved > 6 && rig.panMax > 0) {
-        const dw = -dx * ((2 * rig.dist * rig.fovT) / innerHeight);
-        rig.panTarget = clamp(rig.panTarget + dw, 0, rig.panMax);
-        down.vx = down.vx * 0.6 + (dw / dt) * 0.4;
-      }
-      return;
-    }
-    if (state.sel || ev.pointerType === 'touch') return;
-    const id = pick(ev);
-    if (id !== hover) prefetchCover(id ? entries.get(id) : undefined);
-    hover = id;
-    canvas.classList.toggle('pointer', !!id);
-    const e = id ? entries.get(id) : undefined;
-    hooks.onHover(e ? e.b.title : null, ev.clientX + 14, ev.clientY + 14);
-  });
-  canvas.addEventListener('pointerup', (ev) => {
-    wake();
-    if (!down) return;
-    clearTimeout(pressTimer);
-    const {moved, vx, long} = down;
-    down = null;
-    if (long) return;
-    if (moved < 6) hooks.onPick(pick(ev));
-    // Touch swipes settle on a bookcase; a mouse drag stays where it was let go.
-    else if (ev.pointerType !== 'mouse' && rig.panMax > 0) rig.panTarget = caseX(snapCase(rig.panTarget, vx, pitch, wall.cases.length), pitch);
-  });
-  canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
-  canvas.addEventListener('pointercancel', () => {
-    clearTimeout(pressTimer);
-    down = null;
-  });
-  canvas.addEventListener('pointerleave', () => {
-    wake();
-    hover = null;
-    prefetchCover(undefined);
-    hooks.onHover(null, 0, 0);
-    canvas.classList.remove('pointer');
-  });
-  canvas.addEventListener(
-    'wheel',
-    (ev) => {
-      if (rig.panMax > 0) {
-        wake();
-        ev.preventDefault();
-        const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
-        rig.panTarget = clamp(rig.panTarget + d * 0.012, 0, rig.panMax);
-      }
-    },
-    {passive: false},
-  );
 
   /* ---------- loop ---------- */
   const tmpC = new THREE.Color();
@@ -883,7 +793,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         rz = 7;
         rxy = clear ? 6 : 1.0;
       } else {
-        if (!sel && hover === e.b.id) {
+        if (!sel && picking.hover() === e.b.id) {
           ty += 0.1;
           tz += 0.18;
         } else if (!sel && ((filtering && match) || e.picked)) {
