@@ -213,3 +213,30 @@ describe('sanitizeBook text fields', () => {
     expect(b?.id).toMatch(/^b/);
   });
 });
+
+describe('parseBackup refusals and edges', () => {
+  it('says so for broken JSON, other JSON, and a backup from a newer version', () => {
+    expect(() => parseBackup('{oops')).toThrow(/not valid JSON/);
+    for (const text of ['[]', 'null', '"x"', '{"app":"other","books":[]}', '{"app":"verso"}']) expect(() => parseBackup(text)).toThrow(/not a Verso backup/);
+    expect(() => parseBackup('{"app":"verso","version":2,"books":[]}')).toThrow(/newer version/);
+  });
+
+  it('accepts a backup with no version and no settings, and leaves the current settings alone', () => {
+    const p = parseBackup('{"app":"verso","books":[{"title":"A"}]}');
+    expect(p.books).toHaveLength(1);
+    expect(p.settings).toBeNull();
+    expect(p.skipped).toBe(0);
+  });
+});
+
+describe('mergeBooks edges', () => {
+  it('keeps the current order, appends new books, and changes nothing for an empty import', () => {
+    const a = book('A');
+    const b = book('B');
+    const out = mergeBooks([a, b], [book('C')]);
+    expect(out.books.map((x) => x.title)).toEqual(['A', 'B', 'C']);
+    const same = mergeBooks([a, b], []);
+    expect(same).toMatchObject({added: 0, updated: 0});
+    expect(same.books).toEqual([a, b]);
+  });
+});
