@@ -49,3 +49,8 @@ export function mergeBooks(current: Book[], incoming: Book[]): {books: Book[]; a
   }
   return {books: [...byId.values()], added, updated};
 }
+
+/** What an import produces. While the shelf is still the untouched demo seed it is replaced, not merged into. */
+export function applyImport(current: Book[], seeded: boolean, incoming: Book[]): {books: Book[]; added: number; updated: number} {
+  return mergeBooks(seeded ? [] : current, incoming);
+}

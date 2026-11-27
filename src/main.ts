@@ -18,7 +18,7 @@ import {createToneQueue} from './toneQueue';
 import {dominantTone, loadCover} from './covers';
 import {initStyle, openStyle, closeStyle, applyBackground, applyStudy} from './ui/style';
 import {STORAGE_KEY} from './data/storage';
-import {buildBackup,mergeBooks, parseBackup} from './data/backup';
+import {applyImport, buildBackup, parseBackup} from './data/backup';
 
 // Books drawn before the cloth photo arrives stay plain, so it gets a moment, but never holds the page up.
 await Promise.all([fontsReady, Promise.race([clothReady, new Promise((r) => setTimeout(r, 1500))])]);
@@ -239,7 +239,7 @@ $<HTMLInputElement>('importFile').addEventListener('change', async (ev) => {
     const ok = confirm(`Import ${parsed.books.length} books? Books with the same id on this shelf will be overwritten.`);
     if (!ok) return;
     if (state.sel) deselect();
-    const merged = mergeBooks(state.seeded ? [] : state.books, parsed.books);
+    const merged = applyImport(state.books, state.seeded, parsed.books);
     state.books = merged.books;
     if (parsed.settings) state.settings = parsed.settings;
     persist();
