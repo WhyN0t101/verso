@@ -1,25 +1,19 @@
 import * as THREE from 'three';
-import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
-import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type {Book} from '../types';
 import {state} from '../state';
 import {matches} from '../search';
-import {hash, rng} from '../util';
 import {LIGHTS} from '../presets';
-import {SERIF, bookKind, type BookKind} from '../textures/draw';
 import {createRoom} from './room';
-import {contactShadow, loadModel, type ModelName} from './assets';
-import {packBookFaces} from './faces';
-import {layoutPlate} from './plate';
 import {tintFor} from './tint';
-import {boardGeo, createWood} from './wood';
+import {createWood} from './wood';
+import {DEPTH, PLINTH_H, createWallBuilder, innerWidthFor, widthBucket} from './wallBuild';
 import {createPicking} from './picking';
-import {createBookTextures, faceColors} from './bookTextures';
+import {createBookTextures} from './bookTextures';
 import {MAT, type Entry} from './entry';
 import {SETTLE_EPS, aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
 import {approach, createFrameLoop, ease, needsAnotherFrame} from './loop';
-import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, type SectionInfo, type Wall} from './wall';
+import {caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, type SectionInfo, type Wall} from './wall';
 
 export interface ShelfHooks {
   /** Book id picked by a click, or null for a click on empty space. */
@@ -60,35 +54,6 @@ export interface Shelf {
   setVisible(on: boolean): void;
 }
 
-const ROW_H = 2.55;
-const BOARD = 0.16;
-const SIDE = 0.22;
-const DEPTH = 1.7;
-const WIDTHS = [3.6, 4.2, 4.8];
-const FASCIA_H = 0.6;
-/** Crown moulding above the fascia: two stepped slabs. */
-const CORNICE_H = 0.14;
-/** How a binding looks and feels: corner radius, and how glossy the spine is. Paperbacks are soft and matt, jackets glossy. */
-const BINDING: Record<BookKind, {radius: number; gloss: number}> = {
-  hardcover: {radius: 0.016, gloss: 0.55},
-  paperback: {radius: 0.034, gloss: 0.85},
-  jacket: {radius: 0.02, gloss: 0.3},
-};
-/** Objects standing on the free end of a shelf: at most this many per bookcase. */
-const MAX_DECOR = 3;
-/** What stands on a shelf, and how tall in world units. Real models, loaded on demand. */
-const DECOR: {name: ModelName; height: number}[] = [
-  {name: 'vase', height: 1.2},
-  {name: 'plant', height: 1.3},
-];
-/** Free width a shelf needs beside its last book for one of them. */
-const DECOR_WIDTH = 0.9;
-/** A book may stand this far out of line with its row, so spines are not a ruled edge. */
-const MAX_PULL = 0.09;
-const MAX_LEAN = 0.14;
-const PLINTH_H = 0.3;
-/** Empty space around the framed bookcase: room for the lamp above and the floor below. */
-const VIEW_MARGIN = 0.6;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
 const LIGHT_UNIT = Math.PI;
 
@@ -147,12 +112,12 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   scene.environmentIntensity = 0.3;
   pmrem.dispose();
 
-  const {woodMat, backMat, rowShade, pagesTex, apply: applyWood} = createWood(maxAniso, () => applySettings());
+  const wood = createWood(maxAniso, () => applySettings());
 
   function applySettings(): void {
     dirty();
     const {wood: woodId, light: lightId} = state.settings;
-    applyWood(woodId);
+    wood.apply(woodId);
     const L = LIGHTS[lightId];
     hemi.color.setHex(L.hemiSky);
     hemi.groundColor.setHex(L.hemiGround);
@@ -170,11 +135,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   const bookRoot = new THREE.Group();
   /** Shelf objects: copies of shared models, so clearing them frees nothing. */
   const decorRoot = new THREE.Group();
-  let shelfBuild = 0;
   scene.add(frame, bookRoot, decorRoot);
 
   let bucket = -1;
-  let innerW = 4.2;
   let Hs = 0;
   let Wtot = 0;
   let caseView: {cy: number; h: number}[] = [];
@@ -189,245 +152,27 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   const pickables: THREE.Mesh[] = [];
   const pointer = {x: 0, y: 0, sx: 0, sy: 0};
   const textures = createBookTextures({maxAniso, entries, dirty});
+  const builder = createWallBuilder({frame, bookRoot, decorRoot, entries, pickables, wood, maxAniso, dirty});
 
-
-  function shadowed(geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh {
-    const m = new THREE.Mesh(geo, mat);
-    m.castShadow = m.receiveShadow = true;
-    return m;
-  }
-  /** Brass plate on the fascia naming the sections of a bookcase. */
-  function fasciaPlate(text: string, ox: number, y: number): THREE.Mesh {
-    const w = Wtot * 0.94;
-    const h = FASCIA_H * 0.78;
-    const c = document.createElement('canvas');
-    c.width = 1024;
-    c.height = Math.round((1024 * h) / w);
-    const g = c.getContext('2d');
-    if (!g) throw new Error('2D canvas unavailable');
-    const brass = g.createLinearGradient(0, 0, 0, c.height);
-    brass.addColorStop(0, '#d6b36a');
-    brass.addColorStop(1, '#a8823d');
-    g.fillStyle = brass;
-    g.fillRect(0, 0, c.width, c.height);
-    // Brushed grain, a bevelled rim and a screw at each end, so the plate reads as metal fixed to the wood.
-    const grain = rng(hash('plate' + text));
-    for (let i = 0; i < 260; i++) {
-      g.fillStyle = grain() < 0.5 ? 'rgba(255,240,200,.07)' : 'rgba(60,35,10,.07)';
-      g.fillRect(0, grain() * c.height, c.width, 1);
-    }
-    g.lineWidth = 3;
-    g.strokeStyle = 'rgba(255,240,200,.55)';
-    g.strokeRect(2, 2, c.width - 4, c.height - 4);
-    g.strokeStyle = 'rgba(70,45,12,.55)';
-    g.beginPath();
-    g.moveTo(c.width - 1.5, 3);
-    g.lineTo(c.width - 1.5, c.height - 1.5);
-    g.lineTo(3, c.height - 1.5);
-    g.stroke();
-    for (const sx of [c.height * 0.5, c.width - c.height * 0.5]) {
-      g.fillStyle = 'rgba(70,45,12,.75)';
-      g.beginPath();
-      g.arc(sx, c.height / 2, c.height * 0.1, 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = '#c9a65a';
-      g.beginPath();
-      g.arc(sx - 1, c.height / 2 - 1, c.height * 0.085, 0, Math.PI * 2);
-      g.fill();
-      g.strokeStyle = 'rgba(60,38,10,.8)';
-      g.lineWidth = 3;
-      g.beginPath();
-      g.moveTo(sx - c.height * 0.06, c.height / 2 + c.height * 0.04);
-      g.lineTo(sx + c.height * 0.06, c.height / 2 - c.height * 0.04);
-      g.stroke();
-    }
-    // Dark ink on brass: about 7:1, readable at a glance.
-    g.fillStyle = '#2a1b0c';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    // Long names wrap onto two lines instead of shrinking until they cannot be read.
-    const {lines, fontSize} = layoutPlate(text, c.width - c.height * 1.3, c.height, (s, size) => {
-      g.font = `600 ${size}px ${SERIF}`;
-      return g.measureText(s).width;
-    });
-    g.font = `600 ${fontSize}px ${SERIF}`;
-    const leading = fontSize * 1.08;
-    lines.forEach((line, i) => g.fillText(line, c.width / 2, c.height / 2 + (i - (lines.length - 1) / 2) * leading + fontSize * 0.04));
-    const map = new THREE.CanvasTexture(c);
-    map.colorSpace = THREE.SRGBColorSpace;
-    map.anisotropy = maxAniso;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({map}));
-    m.position.set(ox, y, DEPTH / 2 + 0.095);
-    m.userData.plate = true;
-    return m;
-  }
-  function clearFrame(): void {
-    for (const m of frame.children.slice()) {
-      const mesh = m as THREE.Mesh;
-      mesh.geometry.dispose();
-      // Genre plates own their texture and material; the shared wood material is left alone.
-      if (mesh.userData.plate) {
-        (mesh.material as THREE.MeshBasicMaterial).map?.dispose();
-        (mesh.material as THREE.Material).dispose();
-      }
-      frame.remove(m);
-    }
-  }
-  function clearBooks(): void {
-    for (const grp of bookRoot.children.slice()) {
-      grp.children.forEach((m) => {
-        const mesh = m as THREE.Mesh;
-        mesh.geometry.dispose();
-        new Set(mesh.userData.mats as THREE.Material[]).forEach((x) => x.dispose());
-      });
-      bookRoot.remove(grp);
-    }
-    entries.clear();
-    pickables.length = 0;
-  }
 
   function buildShelf(): void {
-    const build = ++shelfBuild;
-    decorRoot.clear();
     dirty();
     filterKey = '';
     renderer.shadowMap.needsUpdate = true;
-    const prev = new Map<string, {p: THREE.Vector3; r: THREE.Euler; s: number}>();
-    entries.forEach((e, id) => prev.set(id, {p: e.grp.position.clone(), r: e.grp.rotation.clone(), s: e.grp.scale.x}));
-    clearFrame();
-    clearBooks();
     textures.prune(state.books);
     const keepCase = nearestCase(rig.panTarget, pitch, wall.cases.length);
-    innerW = WIDTHS[bucket < 0 ? 1 : bucket] ?? 4.2;
-    wall = layoutWall(state.books, innerW, !!state.settings.groupByGenre);
-    sectionsKey = wall.sections.map((x) => `${x.name}:${x.count}:${x.firstCase}:${x.contains?.length ?? 0}`).join(',');
-    Hs = CASE_ROWS * ROW_H + BOARD;
-    Wtot = innerW + 2 * SIDE;
     const oldPitch = pitch;
-    pitch = Wtot + 0.24;
-    // Cases stand on one floor; a shorter last case simply ends lower.
-    const baseY = -Hs / 2;
-    caseView = [];
-    const tops: number[] = [];
-    for (const c of wall.cases) {
-      const rows = c.rows.length;
-      const Hc = rows * ROW_H + BOARD;
-      const yc = baseY + Hc / 2;
-      const ox = caseX(c.index, pitch);
-      // Every wooden part of a bookcase is merged into one mesh (and the shade strips into another): a case costs a few draws, not twenty.
-      const wood: THREE.BufferGeometry[] = [];
-      const shades: THREE.BufferGeometry[] = [];
-      wood.push(boardGeo(SIDE, Hc, DEPTH, ox - (innerW / 2 + SIDE / 2), yc, 0, true));
-      wood.push(boardGeo(SIDE, Hc, DEPTH, ox + innerW / 2 + SIDE / 2, yc, 0, true));
-      frame.add(shadowed(boardGeo(Wtot, Hc, 0.08, ox, yc, -DEPTH / 2 + 0.04), backMat));
-      for (let i = 0; i <= rows; i++) wood.push(boardGeo(innerW, BOARD, DEPTH, ox, baseY + BOARD / 2 + i * ROW_H, 0));
-      for (let i = 0; i < rows; i++) {
-        shades.push(new THREE.PlaneGeometry(innerW, ROW_H - BOARD).translate(ox, baseY + BOARD + (i + 0.5) * ROW_H - BOARD / 2, -DEPTH / 2 + 0.085));
-      }
-      wood.push(boardGeo(Wtot + 0.24, FASCIA_H, DEPTH + 0.12, ox, baseY + Hc + FASCIA_H / 2, 0.03));
-      const crown = baseY + Hc + FASCIA_H;
-      wood.push(boardGeo(Wtot + 0.3, CORNICE_H * 0.45, DEPTH + 0.2, ox, crown + CORNICE_H * 0.225, 0.05));
-      wood.push(boardGeo(Wtot + 0.46, CORNICE_H * 0.55, DEPTH + 0.3, ox, crown + CORNICE_H * 0.725, 0.08));
-      wood.push(boardGeo(Wtot + 0.12, PLINTH_H, DEPTH + 0.06, ox, baseY - PLINTH_H / 2, 0.02));
-      const sign = fasciaText(c.sections);
-      if (sign) frame.add(fasciaPlate(sign, ox, baseY + Hc + FASCIA_H / 2));
-      for (const bk of c.bookends) {
-        const shelf = baseY + BOARD + (rows - 1 - bk.row) * ROW_H;
-        wood.push(boardGeo(0.05, 1.1, 0.8, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
-      }
-      const merged = mergeGeometries(wood);
-      const shadeMerged = mergeGeometries(shades);
-      wood.forEach((g) => g.dispose());
-      shades.forEach((g) => g.dispose());
-      if (merged) frame.add(shadowed(merged, woodMat));
-      if (shadeMerged) frame.add(new THREE.Mesh(shadeMerged, rowShade));
-      // A vase or plant where a shelf has room beside its last book. Seeded by the case, so they stay put.
-      const choose = rng(hash('decor' + c.index));
-      let placed = 0;
-      c.rows.forEach((row, k) => {
-        if (choose() > 0.55 || placed >= MAX_DECOR) return;
-        const last = row[row.length - 1];
-        if (innerW - (last ? last.x + last.b.w : 0) < DECOR_WIDTH + 0.8) return;
-        const kind = DECOR[Math.floor(choose() * DECOR.length)] ?? DECOR[0];
-        const x = ox + innerW / 2 - 0.6;
-        const y = baseY + BOARD + (rows - 1 - k) * ROW_H;
-        const turn = (choose() - 0.5) * 0.9;
-        if (kind) {
-          loadModel(kind.name, kind.height).then(
-            (m) => {
-              if (build !== shelfBuild) return;
-              m.position.set(x, y, -DEPTH / 2 + 0.65);
-              m.rotation.y = turn;
-              decorRoot.add(m, contactShadow(kind.height * 0.8, kind.height * 0.8, m.position.x, y + 0.02, m.position.z));
-              dirty();
-            },
-            (err: unknown) => console.warn(`model ${kind.name} unavailable`, err),
-          );
-        }
-        placed++;
-      });
-      const top = baseY + Hc + FASCIA_H + CORNICE_H;
-      const bottom = baseY - PLINTH_H;
-      tops.push(top);
-      caseView.push({cy: (top + bottom) / 2, h: top - bottom + VIEW_MARGIN});
-    }
+    const built = builder.build(state.books, !!state.settings.groupByGenre, innerWidthFor(bucket));
+    ({wall, Hs, Wtot, pitch, caseView, sectionsKey} = built);
     if (pitch !== oldPitch) rig.panTarget = rig.panCur = caseX(keepCase, pitch);
-    wall.cases.forEach((c) => c.rows.forEach((row, k) => {
-      const i = c.rows.length - 1 - k;
-      const ox = caseX(c.index, pitch);
-      const floor = baseY + BOARD + i * ROW_H;
-      row.forEach(({b, x: bx}, at) => {
-        // Older books have yellowed pages; the tint multiplies the paper texture.
-        const paper = new THREE.Color(0xffffff).lerp(new THREE.Color(0xe3cf9c), rng(hash(b.id + 'age'))() * 0.9);
-        const pages = new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
-        const binding = BINDING[bookKind(b)];
-        const colors = faceColors(b);
-        // Seeded by id, so a book stands the same way after every rebuild.
-        const r = rng(hash(b.id));
-        const pull = r() * MAX_PULL;
-        const angle = 0.06 + r() * (MAX_LEAN - 0.06);
-        const lean = at > 0 && at === row.length - 1 && r() < 0.75 && innerW - 0.1 - (bx + b.w) > 2 * (b.h / 2) * Math.sin(angle) + 0.06 ? angle : 0;
-        // Slots follow packBookFaces: cover, back board, spine, then one material for all three paper faces.
-        const mats = [
-          new THREE.MeshStandardMaterial({color: colors[0], roughness: 0.6}),
-          new THREE.MeshStandardMaterial({color: colors[1], roughness: 0.7}),
-          new THREE.MeshStandardMaterial({color: colors[2], roughness: binding.gloss}),
-          pages,
-        ];
-        const geo = new RoundedBoxGeometry(b.w, b.h, b.d, 2, binding.radius);
-        packBookFaces(geo);
-        const mesh = new THREE.Mesh(geo, mats);
-        mesh.castShadow = mesh.receiveShadow = true;
-        mesh.userData = {id: b.id, mats};
-        const grp = new THREE.Group();
-        grp.add(mesh);
-        // A leaning book keeps its low corner on the board and its high corner clear of the book it rests against.
-        const home = new THREE.Vector3(
-          ox - innerW / 2 + 0.06 + bx + b.w / 2 + (b.h / 2) * Math.sin(lean),
-          floor + (b.h / 2) * Math.cos(lean) + (b.w / 2) * Math.sin(lean),
-          -DEPTH / 2 + 0.1 + pull + b.d / 2,
-        );
-        grp.position.copy(home);
-        grp.rotation.z = lean;
-        const pv = prev.get(b.id);
-        if (pv) {
-          grp.position.copy(pv.p);
-          grp.rotation.copy(pv.r);
-          grp.scale.setScalar(pv.s);
-        }
-        bookRoot.add(grp);
-        entries.set(b.id, {b, grp, mats, home, base: mats.map((m) => m.color.clone()), tint: new THREE.Color(1, 1, 1), hasSpine: false, hasCover: false, caseIndex: c.index, picked: false, lean, glow: 0, match: true});
-        pickables.push(mesh);
-      });
-    }));
-    room.layout({pitch, count: wall.cases.length, floorY: baseY - PLINTH_H - 0.01, tops, depth: DEPTH});
+    room.layout({pitch, count: wall.cases.length, floorY: built.baseY - PLINTH_H - 0.01, tops: built.tops, depth: DEPTH});
     viewKey = '';
     shadowCase = -1;
     // The shadow map covers five cases around the camera and is re-aimed when the nearest case changes.
     const ext = Math.max(Hs, 5 * pitch) / 2 + 1;
     Object.assign(key.shadow.camera, {left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: 45});
     key.shadow.camera.updateProjectionMatrix();
-    placeCamera(prev.size === 0);
+    placeCamera(built.first);
     // Straight away, not on the next frame: a genre edit must show in the jump list at once.
     emitView();
   }
@@ -462,7 +207,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     const a = w / h;
-    const nb = a < 0.75 ? 0 : a < 1.15 ? 1 : 2;
+    const nb = widthBucket(a);
     if (nb !== bucket) {
       bucket = nb;
       buildShelf();
