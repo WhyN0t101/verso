@@ -437,7 +437,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       grp.children.forEach((m) => {
         const mesh = m as THREE.Mesh;
         mesh.geometry.dispose();
-        (mesh.userData.mats as THREE.Material[]).forEach((x) => x.dispose());
+        new Set(mesh.userData.mats as THREE.Material[]).forEach((x) => x.dispose());
       });
       bookRoot.remove(grp);
     }
@@ -689,7 +689,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       row.forEach(({b, x: bx}, at) => {
         // Older books have yellowed pages; the tint multiplies the paper texture.
         const paper = new THREE.Color(0xffffff).lerp(new THREE.Color(0xe3cf9c), rng(hash(b.id + 'age'))() * 0.9);
-        const pages = () => new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
+        // The three page faces look identical, so one material serves all of them.
+        const pages = new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
         const binding = BINDING[bookKind(b)];
         const colors = faceColors(b);
         // Seeded by id, so a book stands the same way after every rebuild.
@@ -701,10 +702,10 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         const mats = [
           new THREE.MeshStandardMaterial({color: colors[0], roughness: 0.6}),
           new THREE.MeshStandardMaterial({color: colors[1], roughness: 0.7}),
-          pages(),
-          pages(),
+          pages,
+          pages,
           new THREE.MeshStandardMaterial({color: colors[2], roughness: binding.gloss}),
-          pages(),
+          pages,
         ];
         const mesh = new THREE.Mesh(new RoundedBoxGeometry(b.w, b.h, b.d, 2, binding.radius), mats);
         mesh.castShadow = mesh.receiveShadow = true;
