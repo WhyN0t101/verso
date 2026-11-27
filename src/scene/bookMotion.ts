@@ -1,10 +1,7 @@
 import * as THREE from 'three';
-import {ease} from './loop';
+import {SETTLE_EPS, approach, ease} from './loop';
 import {tintFor} from './tint';
 import {MAT, type Entry} from './entry';
-
-/** Sum of the change in position, rotation and scale below which a book counts as having stopped. */
-const MOVE_EPS = 1e-5;
 
 /** What the frame knows when it moves the books. */
 export interface MotionContext {
@@ -88,17 +85,25 @@ export function stepBook(e: Entry, c: MotionContext, out: MotionResult): void {
     rxy = far ? 9 : 10;
     rz = far ? 3.5 : 10;
   }
-  const before = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.rotation.z + e.grp.scale.x;
-  p.x += (tx - p.x) * ease(dt, rxy);
-  p.y += (ty - p.y) * ease(dt, rxy);
-  p.z += (tz - p.z) * ease(dt, rz);
-  e.grp.rotation.y += (rY - e.grp.rotation.y) * ease(dt, 6);
-  e.grp.rotation.x += (rX - e.grp.rotation.x) * ease(dt, 6);
-  e.grp.rotation.z += ((isSel ? 0 : e.lean) - e.grp.rotation.z) * ease(dt, 6);
-  const s = e.grp.scale.x;
-  e.grp.scale.setScalar(s + (sc - s) * ease(dt, 6));
-  const after = p.x + p.y + p.z + e.grp.rotation.y + e.grp.rotation.x + e.grp.rotation.z + e.grp.scale.x;
-  if (Math.abs(after - before) > MOVE_EPS) {
+  // Every component eases and snaps to its own target, and any change counts as movement. A summed test let
+  // opposite movements cancel, so the loop could sleep while the book was still short of where it belongs.
+  const rot = e.grp.rotation;
+  const sx = e.grp.scale.x;
+  const px = p.x;
+  const py = p.y;
+  const pz = p.z;
+  const rx = rot.x;
+  const ry = rot.y;
+  const rzz = rot.z;
+  p.x = approach(p.x, tx, rxy, dt, SETTLE_EPS);
+  p.y = approach(p.y, ty, rxy, dt, SETTLE_EPS);
+  p.z = approach(p.z, tz, rz, dt, SETTLE_EPS);
+  rot.y = approach(rot.y, rY, 6, dt, SETTLE_EPS);
+  rot.x = approach(rot.x, rX, 6, dt, SETTLE_EPS);
+  rot.z = approach(rot.z, isSel ? 0 : e.lean, 6, dt, SETTLE_EPS);
+  const scale = approach(sx, sc, 6, dt, SETTLE_EPS);
+  e.grp.scale.setScalar(scale);
+  if (p.x !== px || p.y !== py || p.z !== pz || rot.x !== rx || rot.y !== ry || rot.z !== rzz || scale !== sx) {
     out.moved++;
     // A hover or search lift is too small to be worth redrawing every book into the shadow map.
     if (isSel) out.shadow = true;

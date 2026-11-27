@@ -1,3 +1,6 @@
+/** Distance under which an easing value lands on its target, so the loop can sleep; far below a pixel. */
+export const SETTLE_EPS = 1e-4;
+
 /** Fraction of the remaining distance covered in `dt` seconds at easing rate `r` (frame-rate independent). */
 export const ease = (dt: number, r: number): number => 1 - Math.exp(-dt * r);
 

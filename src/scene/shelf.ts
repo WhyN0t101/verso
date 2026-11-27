@@ -11,8 +11,8 @@ import {createPicking} from './picking';
 import {stepBook, type MotionContext, type MotionResult} from './bookMotion';
 import {createBookTextures} from './bookTextures';
 import type {Entry} from './entry';
-import {SETTLE_EPS, aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
-import {approach, createFrameLoop, needsAnotherFrame} from './loop';
+import {aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
+import {SETTLE_EPS, approach, createFrameLoop, needsAnotherFrame} from './loop';
 import {caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, type SectionInfo, type Wall} from './wall';
 
 export interface ShelfHooks {
