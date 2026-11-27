@@ -37,12 +37,14 @@ export function applyStatus(b: Book, status: Status | undefined, today = todayIs
 
 export const isStatus = (v: unknown): v is Status => typeof v === 'string' && Object.hasOwn(STATUS_LABELS, v);
 
+const newId = (): string => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
 export function makeBook(d: BookDraft): Book {
   const title = d.title.trim();
   const author = (d.author ?? '').trim();
   const r = rng(hash(title + '|' + author));
   const book: Book = {
-    id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    id: newId(),
     title,
     author,
     genre: (d.genre ?? '').trim() || UNSORTED,
@@ -97,6 +99,23 @@ function sanitizeTone(v: unknown): Tone | undefined {
   return {h: num(t.h, 0, 0, 360), s: num(t.s, 0, 0, 100), l: num(t.l, 0, 0, 100)};
 }
 
+// Exactly what /api/cover takes: a numeric id and an optional size. Nothing else may reach a fetch or an img src.
+const COVER_PATH = /^\/api\/cover\?id=\d{1,12}(?:&size=[SML])?$/;
+
+/** Sanitises a list of untrusted books. Ids are the key for selection, textures and merging, so a repeated id gets a fresh one. */
+export function sanitizeBooks(list: unknown[]): Book[] {
+  const seen = new Set<string>();
+  const out: Book[] = [];
+  for (const x of list) {
+    const b = sanitizeBook(x);
+    if (!b) continue;
+    while (seen.has(b.id)) b.id = newId();
+    seen.add(b.id);
+    out.push(b);
+  }
+  return out;
+}
+
 /** Coerces untrusted JSON (localStorage, backup file) into a valid Book, or null when unusable. */
 export function sanitizeBook(x: unknown): Book | null {
   if (!x || typeof x !== 'object') return null;
@@ -104,7 +123,7 @@ export function sanitizeBook(x: unknown): Book | null {
   const title = str(o.title, 200).trim();
   if (!title) return null;
   const book: Book = {
-    id: str(o.id, 40) || 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    id: str(o.id, 40) || newId(),
     title,
     author: str(o.author, 200),
     genre: str(o.genre, 60) || UNSORTED,
@@ -123,7 +142,7 @@ export function sanitizeBook(x: unknown): Book | null {
   if (book.status === 'finished' && finishedOn) book.finishedOn = finishedOn;
   if (typeof o.year === 'number' && Number.isFinite(o.year)) book.year = Math.round(o.year);
   // Only same-origin proxy paths are accepted so an imported file cannot point the canvas at foreign images.
-  if (typeof o.cover === 'string' && o.cover.startsWith('/api/cover?')) book.cover = o.cover;
+  if (typeof o.cover === 'string' && COVER_PATH.test(o.cover)) book.cover = o.cover;
   const tone = sanitizeTone(o.tone);
   if (tone) book.tone = tone;
   return book;

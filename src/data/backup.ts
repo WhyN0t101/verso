@@ -1,5 +1,5 @@
 import type {Book, Settings} from '../types';
-import {sanitizeBook} from './books';
+import {sanitizeBooks} from './books';
 import {sanitizeSettings} from './settings';
 
 const APP = 'verso';
@@ -27,7 +27,7 @@ export function parseBackup(text: string): ParsedBackup {
   const o = data as {app?: unknown; version?: unknown; books?: unknown; settings?: unknown} | null;
   if (!o || typeof o !== 'object' || o.app !== APP || !Array.isArray(o.books)) throw new Error('That file is not a Verso backup.');
   if (typeof o.version === 'number' && o.version > VERSION) throw new Error('That backup was made by a newer version of Verso.');
-  const books = o.books.map(sanitizeBook).filter((b): b is Book => !!b);
+  const books = sanitizeBooks(o.books);
   return {books, settings: o.settings ? sanitizeSettings(o.settings) : null, skipped: o.books.length - books.length};
 }
 

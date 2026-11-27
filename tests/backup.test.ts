@@ -174,3 +174,21 @@ describe('appearance', () => {
     expect(sanitizeSettings({wood: 'plastic', light: 'strobe', background: {kind: 'preset', id: 'nope'}})).toMatchObject({wood: 'honey', light: 'lamplit', background: {id: 'study'}});
   });
 });
+
+describe('cover path pattern', () => {
+  it('accepts only the id (and optional size) of our own cover route', () => {
+    for (const c of ['/api/cover?id=1', '/api/cover?id=12&size=L']) expect(sanitizeBook({title: 'X', cover: c})?.cover).toBe(c);
+    for (const c of ['/api/cover?', '/api/cover?id=abc', '/api/cover?id=1&x=../../y', '/api/cover?id=1#frag', '/api/cover?id=1\n'])
+      expect(sanitizeBook({title: 'X', cover: c})?.cover).toBeUndefined();
+  });
+});
+
+describe('duplicate ids', () => {
+  it('gives later books with a repeated id a fresh one, in a backup', () => {
+    const text = JSON.stringify({app: 'verso', version: 1, books: [{id: 'same', title: 'A'}, {id: 'same', title: 'B'}]});
+    const {books} = parseBackup(text);
+    expect(books.map((b) => b.title)).toEqual(['A', 'B']);
+    expect(books[0]?.id).toBe('same');
+    expect(new Set(books.map((b) => b.id)).size).toBe(2);
+  });
+});
