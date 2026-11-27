@@ -84,3 +84,42 @@ describe('tone queue', () => {
     expect(breathe).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('tone queue, more cases', () => {
+  it('survives an analyser that throws and still handles the next book', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const analyse = vi.fn().mockImplementationOnce(() => { throw new Error('canvas'); }).mockReturnValue(tone);
+    const q = createToneQueue({load: async () => img, analyse, onTone: vi.fn(), breathe: async () => undefined});
+    const bad = withCover('bad');
+    const good = withCover('good!');
+    q.add([bad, good]);
+    await q.idle();
+    expect(bad.tone).toBeUndefined();
+    expect(good.tone).toEqual(tone);
+  });
+
+  it('does not overwrite a tone the book gained while its cover was loading', async () => {
+    const gate = deferred<HTMLImageElement>();
+    const onTone = vi.fn();
+    const q = createToneQueue({load: () => gate.promise, analyse: () => tone, onTone, breathe: async () => undefined});
+    const b = withCover('Race');
+    q.add([b]);
+    b.tone = {h: 1, s: 1, l: 1};
+    gate.resolve(img);
+    await q.idle();
+    expect(b.tone).toEqual({h: 1, s: 1, l: 1});
+    expect(onTone).not.toHaveBeenCalled();
+  });
+
+  it('is idle at once when nothing was queued, and picks up books added while running', async () => {
+    const q = createToneQueue({load: async () => img, analyse: () => tone, onTone: vi.fn(), breathe: async () => undefined});
+    await q.idle();
+    const a = withCover('first');
+    const b = withCover('second one');
+    q.add([a]);
+    q.add([b]);
+    await q.idle();
+    expect(a.tone).toEqual(tone);
+    expect(b.tone).toEqual(tone);
+  });
+});
