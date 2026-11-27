@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type {Book} from '../types';
 import {state} from '../state';
 import {matches} from '../search';
@@ -379,13 +380,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       }
     });
   }
-  function box(w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, upright = false): THREE.Mesh {
+  /** A board's geometry already placed at x, y, z, so boards of one bookcase can be merged into a single mesh. */
+  function boardGeo(w: number, h: number, d: number, x: number, y: number, z: number, upright = false): THREE.BufferGeometry {
     const g = new THREE.BoxGeometry(w, h, d);
     // Each board takes its grain from a different part of the photo, so no two look cut from the same strip.
     const pick = rng(hash(`${x.toFixed(2)}|${y.toFixed(2)}|${z.toFixed(2)}`));
     woodUV(g, w, h, d, upright, pick(), pick());
-    const m = new THREE.Mesh(g, mat);
-    m.position.set(x, y, z);
+    return g.translate(x, y, z);
+  }
+  function shadowed(geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh {
+    const m = new THREE.Mesh(geo, mat);
     m.castShadow = m.receiveShadow = true;
     return m;
   }
@@ -665,26 +669,33 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const Hc = rows * ROW_H + BOARD;
       const yc = baseY + Hc / 2;
       const ox = caseX(c.index, pitch);
-      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox - (innerW / 2 + SIDE / 2), yc, 0, true));
-      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox + innerW / 2 + SIDE / 2, yc, 0, true));
-      frame.add(box(Wtot, Hc, 0.08, backMat, ox, yc, -DEPTH / 2 + 0.04));
-      for (let i = 0; i <= rows; i++) frame.add(box(innerW, BOARD, DEPTH, woodMat, ox, baseY + BOARD / 2 + i * ROW_H, 0));
+      // Every wooden part of a bookcase is merged into one mesh (and the shade strips into another): a case costs a few draws, not twenty.
+      const wood: THREE.BufferGeometry[] = [];
+      const shades: THREE.BufferGeometry[] = [];
+      wood.push(boardGeo(SIDE, Hc, DEPTH, ox - (innerW / 2 + SIDE / 2), yc, 0, true));
+      wood.push(boardGeo(SIDE, Hc, DEPTH, ox + innerW / 2 + SIDE / 2, yc, 0, true));
+      frame.add(shadowed(boardGeo(Wtot, Hc, 0.08, ox, yc, -DEPTH / 2 + 0.04), backMat));
+      for (let i = 0; i <= rows; i++) wood.push(boardGeo(innerW, BOARD, DEPTH, ox, baseY + BOARD / 2 + i * ROW_H, 0));
       for (let i = 0; i < rows; i++) {
-        const shade = new THREE.Mesh(new THREE.PlaneGeometry(innerW, ROW_H - BOARD), rowShade);
-        shade.position.set(ox, baseY + BOARD + (i + 0.5) * ROW_H - BOARD / 2, -DEPTH / 2 + 0.085);
-        frame.add(shade);
+        shades.push(new THREE.PlaneGeometry(innerW, ROW_H - BOARD).translate(ox, baseY + BOARD + (i + 0.5) * ROW_H - BOARD / 2, -DEPTH / 2 + 0.085));
       }
-      frame.add(box(Wtot + 0.24, FASCIA_H, DEPTH + 0.12, woodMat, ox, baseY + Hc + FASCIA_H / 2, 0.03));
+      wood.push(boardGeo(Wtot + 0.24, FASCIA_H, DEPTH + 0.12, ox, baseY + Hc + FASCIA_H / 2, 0.03));
       const crown = baseY + Hc + FASCIA_H;
-      frame.add(box(Wtot + 0.3, CORNICE_H * 0.45, DEPTH + 0.2, woodMat, ox, crown + CORNICE_H * 0.225, 0.05));
-      frame.add(box(Wtot + 0.46, CORNICE_H * 0.55, DEPTH + 0.3, woodMat, ox, crown + CORNICE_H * 0.725, 0.08));
-      frame.add(box(Wtot + 0.12, PLINTH_H, DEPTH + 0.06, woodMat, ox, baseY - PLINTH_H / 2, 0.02));
+      wood.push(boardGeo(Wtot + 0.3, CORNICE_H * 0.45, DEPTH + 0.2, ox, crown + CORNICE_H * 0.225, 0.05));
+      wood.push(boardGeo(Wtot + 0.46, CORNICE_H * 0.55, DEPTH + 0.3, ox, crown + CORNICE_H * 0.725, 0.08));
+      wood.push(boardGeo(Wtot + 0.12, PLINTH_H, DEPTH + 0.06, ox, baseY - PLINTH_H / 2, 0.02));
       const sign = fasciaText(c.sections);
       if (sign) frame.add(fasciaPlate(sign, ox, baseY + Hc + FASCIA_H / 2));
       for (const bk of c.bookends) {
         const shelf = baseY + BOARD + (rows - 1 - bk.row) * ROW_H;
-        frame.add(box(0.05, 1.1, 0.8, woodMat, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
+        wood.push(boardGeo(0.05, 1.1, 0.8, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
       }
+      const merged = mergeGeometries(wood);
+      const shadeMerged = mergeGeometries(shades);
+      wood.forEach((g) => g.dispose());
+      shades.forEach((g) => g.dispose());
+      if (merged) frame.add(shadowed(merged, woodMat));
+      if (shadeMerged) frame.add(new THREE.Mesh(shadeMerged, rowShade));
       // A vase or plant where a shelf has room beside its last book. Seeded by the case, so they stay put.
       const choose = rng(hash('decor' + c.index));
       let placed = 0;
