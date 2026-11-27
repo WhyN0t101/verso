@@ -15,6 +15,7 @@ import {packBookFaces} from './faces';
 import {layoutPlate} from './plate';
 import {tintFor} from './tint';
 import {boardGeo, createWood} from './wood';
+import {SETTLE_EPS, aimCamera, createRig, frameFor, frameSpace, isMobile, placeRig, selectionTarget, stepRig} from './camera';
 import {approach, createFrameLoop, ease, needsAnotherFrame} from './loop';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
@@ -108,9 +109,6 @@ const MAX_LEAN = 0.14;
 const PLINTH_H = 0.3;
 /** Empty space around the framed bookcase: room for the lamp above and the floor below. */
 const VIEW_MARGIN = 0.6;
-const headerPx = (): number => document.getElementById('bar')?.getBoundingClientRect().height ?? 64;
-/** Height of the section bar plus its gap on screens narrower than the rail breakpoint. */
-const NARROW_BAR_PX = 64;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
 const LIGHT_UNIT = Math.PI;
 const MAT = {cover: 0, back: 1, spine: 2} as const;
@@ -121,9 +119,6 @@ const FACE_GLOW = 0.72;
 /** Milliseconds per frame spent drawing spine textures; the nearest bookcase is done first. */
 const SPINE_BUDGET_MS = 8;
 
-/** Distance under which an easing value lands on its target, so the loop can sleep; far below a pixel. */
-const SETTLE_EPS = 1e-4;
-const isMobile = () => innerWidth <= 760;
 
 export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf | null {
   let renderer: THREE.WebGLRenderer;
@@ -162,7 +157,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 120);
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
-  const FOV_T = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const rig = createRig(camera, matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const hemi = new THREE.HemisphereLight(0xfff0dc, 0x2b1e14, 0.9 * LIGHT_UNIT);
   const key = new THREE.DirectionalLight(0xffe3bd, 0.85 * LIGHT_UNIT);
@@ -210,17 +205,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   let innerW = 4.2;
   let Hs = 0;
   let Wtot = 0;
-  let camDist = 12;
-  let camCY = 0;
-  let camDistT = 12;
-  let camCYT = 0;
-  let framedCase = -1;
   let caseView: {cy: number; h: number}[] = [];
-  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  /** Horizontal camera position along the wall, current and target. */
-  let panTarget = 0;
-  let panCur = 0;
-  let panMax = 0;
   let pitch = 5;
   let wall: Wall = layoutWall([], 4.2, false);
   let shadowCase = -1;
@@ -526,7 +511,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     clearFrame();
     clearBooks();
     pruneTextures();
-    const keepCase = nearestCase(panTarget, pitch, wall.cases.length);
+    const keepCase = nearestCase(rig.panTarget, pitch, wall.cases.length);
     innerW = WIDTHS[bucket < 0 ? 1 : bucket] ?? 4.2;
     wall = layoutWall(state.books, innerW, !!state.settings.groupByGenre);
     sectionsKey = wall.sections.map((x) => `${x.name}:${x.count}:${x.firstCase}:${x.contains?.length ?? 0}`).join(',');
@@ -600,7 +585,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       tops.push(top);
       caseView.push({cy: (top + bottom) / 2, h: top - bottom + VIEW_MARGIN});
     }
-    if (pitch !== oldPitch) panTarget = panCur = caseX(keepCase, pitch);
+    if (pitch !== oldPitch) rig.panTarget = rig.panCur = caseX(keepCase, pitch);
     wall.cases.forEach((c) => c.rows.forEach((row, k) => {
       const i = c.rows.length - 1 - k;
       const ox = caseX(c.index, pitch);
@@ -662,39 +647,18 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   }
 
   /** Camera distance and height that frame the given bookcase so it fills the viewport. */
-  function frameFor(index: number): {dist: number; cy: number} {
-    const v = caseView[clampCase(index, caseView.length)] ?? {cy: 0, h: Hs};
-    const H = innerHeight;
-    const aspect = innerWidth / H;
-    // The header and, on narrow screens, the section bar cover part of the canvas: frame the case in the free band.
-    const topInset = headerPx();
-    const bottomInset = innerWidth <= 1000 ? NARROW_BAR_PX : 8;
-    const free = Math.max(H - topInset - bottomInset, H * 0.5);
-    const dist = Math.max(((v.h * H) / free / 2) / FOV_T, Wtot / 2 / (FOV_T * aspect)) * 1.06 + DEPTH / 2;
-    // Content sits lower than the screen centre when the top inset is larger than the bottom one.
-    const worldPerPx = (2 * dist * FOV_T) / H;
-    return {dist, cy: v.cy + ((topInset - bottomInset) / 2) * worldPerPx};
-  }
+  const framing = (index: number): {dist: number; cy: number} =>
+    frameFor(caseView[clampCase(index, caseView.length)] ?? {cy: 0, h: Hs}, frameSpace(Wtot, DEPTH), rig.fovT);
 
   /** Re-aims the camera framing; it eases there unless this is the first frame or motion is reduced. */
   function placeCamera(initial: boolean): void {
-    panMax = (wall.cases.length - 1) * pitch;
-    if (initial) panTarget = panCur = 0;
-    panTarget = clamp(panTarget, 0, panMax);
-    framedCase = nearestCase(panTarget, pitch, wall.cases.length);
-    const f = frameFor(framedCase);
-    camDistT = f.dist;
-    camCYT = f.cy;
-    if (initial || reducedMotion) {
-      camDist = f.dist;
-      camCY = f.cy;
-    }
+    placeRig(rig, initial, wall.cases.length, pitch, framing);
     dirty();
   }
 
   /** Tells the page what the wall holds and where the camera is heading; only when that changed. */
   function emitView(): void {
-    const target = nearestCase(panTarget, pitch, wall.cases.length);
+    const target = nearestCase(rig.panTarget, pitch, wall.cases.length);
     const vk = `${target}|${sectionsKey}`;
     if (vk === viewKey) return;
     viewKey = vk;
@@ -717,30 +681,6 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       bucket = nb;
       buildShelf();
     } else placeCamera(false);
-  }
-
-  /** Scratch for selTarget, which runs every frame while a book is open. The result is only read within that frame. */
-  const selPos = new THREE.Vector3();
-  const selDir = new THREE.Vector3();
-  const selResult = {pos: selPos, s: 1};
-  /** Where the pulled-out book rests: centred in the area the detail panel leaves free. */
-  function selTarget(b: Book): {pos: THREE.Vector3; s: number} {
-    const dist = camDist * 0.5;
-    const w = innerWidth;
-    const h = innerHeight;
-    const mob = isMobile();
-    const pw = mob ? 0 : Math.min(400, w * 0.92);
-    const top = headerPx();
-    const bot = mob ? h * 0.48 : h;
-    const fx = mob ? w / 2 : (w - pw) / 2;
-    const fy = (top + bot) / 2;
-    const freeW = mob ? w : w - pw;
-    const freeH = bot - top;
-    const v = selDir.set((fx / w) * 2 - 1, 1 - (fy / h) * 2, 0.5).unproject(camera).sub(camera.position).normalize();
-    selPos.copy(camera.position).addScaledVector(v, dist);
-    const unit = (2 * dist * FOV_T) / h;
-    selResult.s = clamp(Math.min((0.68 * freeH * unit) / b.h, (0.72 * freeW * unit) / b.d), 0.6, 2.4);
-    return selResult;
   }
 
   /* ---------- pointer ---------- */
@@ -780,9 +720,9 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       down.lx = ev.clientX;
       down.lt = ev.timeStamp;
       down.moved = Math.max(down.moved, Math.hypot(ev.clientX - down.x, ev.clientY - down.y));
-      if (down.moved > 6 && panMax > 0) {
-        const dw = -dx * ((2 * camDist * FOV_T) / innerHeight);
-        panTarget = clamp(panTarget + dw, 0, panMax);
+      if (down.moved > 6 && rig.panMax > 0) {
+        const dw = -dx * ((2 * rig.dist * rig.fovT) / innerHeight);
+        rig.panTarget = clamp(rig.panTarget + dw, 0, rig.panMax);
         down.vx = down.vx * 0.6 + (dw / dt) * 0.4;
       }
       return;
@@ -804,7 +744,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     if (long) return;
     if (moved < 6) hooks.onPick(pick(ev));
     // Touch swipes settle on a bookcase; a mouse drag stays where it was let go.
-    else if (ev.pointerType !== 'mouse' && panMax > 0) panTarget = caseX(snapCase(panTarget, vx, pitch, wall.cases.length), pitch);
+    else if (ev.pointerType !== 'mouse' && rig.panMax > 0) rig.panTarget = caseX(snapCase(rig.panTarget, vx, pitch, wall.cases.length), pitch);
   });
   canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
   canvas.addEventListener('pointercancel', () => {
@@ -821,11 +761,11 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   canvas.addEventListener(
     'wheel',
     (ev) => {
-      if (panMax > 0) {
+      if (rig.panMax > 0) {
         wake();
         ev.preventDefault();
         const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
-        panTarget = clamp(panTarget + d * 0.012, 0, panMax);
+        rig.panTarget = clamp(rig.panTarget + d * 0.012, 0, rig.panMax);
       }
     },
     {passive: false},
@@ -851,14 +791,14 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
   function lazyTextures(sel: Entry | undefined): void {
     if (sel && !sel.hasCover) applyCover(sel);
     // Only books in bookcases near the camera get a spine texture, within a time budget per frame, so 100+ books do not stall startup.
-    const reach = camDist * FOV_T * camera.aspect + pitch * 0.6;
+    const reach = rig.dist * rig.fovT * camera.aspect + pitch * 0.6;
     // Every couple of seconds, spines far beyond the view are released, so panning a big wall does not keep them all in memory.
-    if (++sweep % 120 === 0) for (const e of entries.values()) if (e.hasSpine && e !== sel && Math.abs(caseX(e.caseIndex, pitch) - panCur) > reach * 3) evictSpine(e);
+    if (++sweep % 120 === 0) for (const e of entries.values()) if (e.hasSpine && e !== sel && Math.abs(caseX(e.caseIndex, pitch) - rig.panCur) > reach * 3) evictSpine(e);
     // Nearest bookcases first, so what is on screen gets its spine before what is merely close; a time budget keeps frames smooth.
     // The list is only built while something is missing, so an idle shelf allocates nothing per frame.
     let todo: {e: Entry; d: number}[] | null = null;
     for (const e of entries.values()) {
-      const d = Math.abs(caseX(e.caseIndex, pitch) - panCur);
+      const d = Math.abs(caseX(e.caseIndex, pitch) - rig.panCur);
       if (e.hasSpine || d > reach) continue;
       (todo ??= []).push({e, d});
     }
@@ -879,33 +819,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     let moved = 0;
     const px = pointer.sx;
     const py = pointer.sy;
-    const pc = panCur;
     pointer.sx = approach(pointer.sx, pointer.x, 4, dt, SETTLE_EPS);
     pointer.sy = approach(pointer.sy, pointer.y, 4, dt, SETTLE_EPS);
-    panCur = reducedMotion ? panTarget : approach(panCur, panTarget, 10, dt, SETTLE_EPS);
-    // Reframe when the bookcase the camera is heading for has a different height (rows trimmed or added).
-    const heading = nearestCase(panTarget, pitch, wall.cases.length);
-    if (heading !== framedCase) {
-      framedCase = heading;
-      const f = frameFor(heading);
-      camDistT = f.dist;
-      camCYT = f.cy;
-    }
-    const cd = camDist;
-    const cc = camCY;
-    camDist = reducedMotion ? camDistT : approach(camDist, camDistT, 5, dt, SETTLE_EPS);
-    camCY = reducedMotion ? camCYT : approach(camCY, camCYT, 5, dt, SETTLE_EPS);
-    moved += Math.abs(pointer.sx - px) + Math.abs(pointer.sy - py) + Math.abs(panCur - pc) + Math.abs(camDist - cd) + Math.abs(camCY - cc);
-    const camY = camCY + 2 * camDist * FOV_T * 0.035;
-    camera.position.set(panCur + pointer.sx * 0.5, camY - pointer.sy * 0.3, camDist);
-    camera.lookAt(panCur + pointer.sx * 0.15, camY, 0);
-    camera.updateMatrixWorld();
+    moved += Math.abs(pointer.sx - px) + Math.abs(pointer.sy - py) + stepRig(rig, dt, wall.cases.length, pitch, framing);
+    aimCamera(rig, pointer.sx, pointer.sy);
     const sel = state.sel ? entries.get(state.sel) : undefined;
     if (prevSel && prevSel !== sel) cancelCover(prevSel);
     prevSel = sel;
-    const st = sel ? selTarget(sel.b) : null;
+    const st = sel ? selectionTarget(rig, sel.b.h, sel.b.d) : null;
     lazyTextures(sel);
-    const near = nearestCase(panCur, pitch, wall.cases.length);
+    const near = nearestCase(rig.panCur, pitch, wall.cases.length);
     if (near !== shadowCase) {
       shadowCase = near;
       const cx = caseX(near, pitch);
@@ -1060,18 +983,18 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     applySettings,
     focusBook(id) {
       const c = wall.caseOf.get(id);
-      if (c !== undefined) panTarget = caseX(c, pitch);
+      if (c !== undefined) rig.panTarget = caseX(c, pitch);
       wake();
     },
     retone,
     focusCase(index) {
-      panTarget = caseX(clampCase(index, wall.cases.length), pitch);
+      rig.panTarget = caseX(clampCase(index, wall.cases.length), pitch);
       wake();
     },
     revealMatch() {
       if (!state.q && !state.status && !state.section) return;
       const c = firstMatchCase(wall, (b) => matches(b, state.q, state.status, state.section?.genres ?? null));
-      if (c !== null) panTarget = caseX(c, pitch);
+      if (c !== null) rig.panTarget = caseX(c, pitch);
       wake();
     },
     wake,
