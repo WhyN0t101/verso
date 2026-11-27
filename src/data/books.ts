@@ -35,7 +35,7 @@ export function applyStatus(b: Book, status: Status | undefined, today = todayIs
   else delete b.finishedOn;
 }
 
-export const isStatus = (v: unknown): v is Status => typeof v === 'string' && Object.hasOwn(STATUS_LABELS, v);
+const isStatus = (v: unknown): v is Status => typeof v === 'string' && Object.hasOwn(STATUS_LABELS, v);
 
 const newId = (): string => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 

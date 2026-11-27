@@ -7,10 +7,10 @@ const MIN_ROWS = 2;
 const ROW_GAP = 0.025;
 const ROW_MARGIN = 0.12;
 /** Every genre is its own section until there are more than this many; then the smallest fold into Other. */
-export const MAX_SECTIONS = 12;
-export const OTHER = 'Other';
+const MAX_SECTIONS = 12;
+const OTHER = 'Other';
 /** Width of the slim bookend that separates two sections on a shared shelf. */
-export const BOOKEND_W = 0.1;
+const BOOKEND_W = 0.1;
 
 export interface Placed {
   b: Book;
