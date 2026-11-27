@@ -45,7 +45,8 @@ export function load(): Stored {
 export function save(data: Stored): boolean {
   memory = data;
   try {
-    localStorage.setItem(KEY, JSON.stringify({version: 1, ...data}));
+    localStorage.setItem(KEY, // `seeded` is a runtime flag; spreading the whole object would write it into the saved shelf.
+    JSON.stringify({version: 1, books: data.books, settings: data.settings}));
     return true;
   } catch (err) {
     console.warn('could not save to localStorage', err);

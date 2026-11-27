@@ -77,3 +77,48 @@ describe('encodeWithinLimit', () => {
     expect(() => encodeWithinLimit(() => 'x'.repeat(MAX_IMAGE_CHARS + 1))).toThrow(/too large/);
   });
 });
+
+describe('storage under bad conditions', () => {
+  // `memory` in storage.ts lives for the whole module, so each test gets a fresh copy.
+  const fresh = async () => {
+    vi.resetModules();
+    return import('../src/data/storage');
+  };
+
+  it('falls back to the demo shelf when the stored JSON is corrupt or the wrong shape', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    for (const raw of ['{not json', '"text"', '{"books":"nope"}', 'null']) {
+      store.set('verso.v1', raw);
+      const s = (await fresh()).load();
+      expect(s.seeded).toBe(true);
+      expect(s.books.length).toBeGreaterThan(0);
+    }
+    warn.mockRestore();
+  });
+
+  it('drops unusable entries but keeps the rest, and keeps working when reading throws', async () => {
+    store.set('verso.v1', JSON.stringify({version: 1, books: [{title: 'Keep'}, 5, null, {title: ''}, {author: 'no title'}]}));
+    expect((await fresh()).load().books.map((b) => b.title)).toEqual(['Keep']);
+    vi.stubGlobal('localStorage', {getItem: () => { throw new Error('blocked'); }, setItem: () => undefined});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    expect((await fresh()).load().seeded).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('reports a refused write and then serves what it was given from memory', async () => {
+    const {load, save} = await fresh();
+    vi.stubGlobal('localStorage', {getItem: () => null, setItem: () => { throw new DOMException('full', 'QuotaExceededError'); }});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const mine = load();
+    mine.books = mine.books.slice(0, 2);
+    expect(save({books: mine.books, settings: mine.settings})).toBe(false);
+    expect(load().books).toHaveLength(2);
+    warn.mockRestore();
+  });
+
+  it('never writes the demo-seed flag to disk', async () => {
+    const {load, save} = await fresh();
+    save(load());
+    expect(JSON.parse(store.get('verso.v1') ?? '{}')).not.toHaveProperty('seeded');
+  });
+});
