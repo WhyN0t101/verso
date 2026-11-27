@@ -322,3 +322,34 @@ describe('/api/search result fields come from an untrusted upstream', () => {
     expect(r.results.map((x) => x.year)).toEqual([null, 1951]);
   });
 });
+
+describe('/api/cover and /api/covers failure paths', () => {
+  it('refuses an oversized image without caching it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(new Uint8Array(4 * 1024 * 1024 + 1), {headers: {'Content-Type': 'image/jpeg'}})));
+    const r = await call('/api/cover?id=500');
+    expect(r.status).toBe(502);
+    expect(cache.store.size).toBe(0);
+  });
+
+  it('answers HEAD like GET instead of rejecting it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(new Uint8Array([1]), {headers: {'Content-Type': 'image/png'}})));
+    const res = await worker.fetch(new Request('https://verso.test/api/cover?id=501', {method: 'HEAD'}), {ASSETS: assets}, ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('turns an upstream failure of the cover search into a 502 that is not cached', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({}, 500));
+    const r = await call('/api/covers?title=Dune&author=Herbert');
+    expect(r.status).toBe(502);
+    expect(r.headers.get('Cache-Control')).toBe('no-store');
+    expect(cache.store.size).toBe(0);
+  });
+
+  it('keeps a miss short-lived when no edition has a cover', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((u) => (String(u).includes('editions') ? json({entries: [{title: 'Dune'}]}) : json({docs: [{key: '/works/OL1W', title: 'Dune', author_name: ['Frank Herbert'], edition_count: 3}]})));
+    const r = await call('/api/covers?title=Dune&author=Herbert');
+    expect(r.body).toEqual({choices: []});
+    expect(r.headers.get('Cache-Control')).toContain('s-maxage=3600');
+    expect(r.headers.get('Cache-Control')).not.toContain('86400');
+  });
+});
