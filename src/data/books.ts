@@ -88,6 +88,7 @@ function applyDraftExtras(b: Book, d: BookDraft): void {
   }
 }
 
+const MAX_YEAR = 3000;
 const num = (v: unknown, fallback: number, lo: number, hi: number): number =>
   typeof v === 'number' && Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
 const str = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '');
@@ -125,8 +126,8 @@ export function sanitizeBook(x: unknown): Book | null {
   const book: Book = {
     id: str(o.id, 40) || newId(),
     title,
-    author: str(o.author, 200),
-    genre: str(o.genre, 60) || UNSORTED,
+    author: str(o.author, 200).trim(),
+    genre: str(o.genre, 60).trim() || UNSORTED,
     summary: str(o.summary, 2000),
     notes: str(o.notes, 20000),
     rating: Math.round(num(o.rating, 0, 0, 5)),
@@ -140,7 +141,8 @@ export function sanitizeBook(x: unknown): Book | null {
   if (isStatus(o.status)) book.status = o.status;
   const finishedOn = isoDate(o.finishedOn);
   if (book.status === 'finished' && finishedOn) book.finishedOn = finishedOn;
-  if (typeof o.year === 'number' && Number.isFinite(o.year)) book.year = Math.round(o.year);
+  // Wide enough for any real publication year, narrow enough that it cannot break the card or the sort.
+  if (typeof o.year === 'number' && Number.isFinite(o.year) && Math.abs(o.year) <= MAX_YEAR) book.year = Math.round(o.year);
   // Only same-origin proxy paths are accepted so an imported file cannot point the canvas at foreign images.
   if (typeof o.cover === 'string' && COVER_PATH.test(o.cover)) book.cover = o.cover;
   const tone = sanitizeTone(o.tone);

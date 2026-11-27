@@ -192,3 +192,24 @@ describe('duplicate ids', () => {
     expect(new Set(books.map((b) => b.id)).size).toBe(2);
   });
 });
+
+describe('sanitizeBook text fields', () => {
+  it('trims author and genre like makeBook does, so a blank genre becomes Unsorted', () => {
+    const b = sanitizeBook({title: 'X', author: '  Ann  ', genre: '   '});
+    expect(b?.author).toBe('Ann');
+    expect(b?.genre).toBe('Unsorted');
+    expect(sanitizeBook({title: 'X', genre: ' Fantasy '})?.genre).toBe('Fantasy');
+  });
+
+  it('keeps only a plausible whole-number year', () => {
+    expect(sanitizeBook({title: 'X', year: 1951.4})?.year).toBe(1951);
+    for (const year of [1e12, -1e9, '1999', NaN]) expect(sanitizeBook({title: 'X', year})?.year).toBeUndefined();
+  });
+
+  it('survives hostile values of every field without throwing', () => {
+    const b = sanitizeBook({title: 'X', author: 5, genre: {}, summary: [], notes: null, rating: 'high', tone: {h: 'a'}, status: 7, finishedOn: 3, id: {}});
+    expect(b).toMatchObject({title: 'X', author: '', genre: 'Unsorted', summary: '', notes: '', rating: 0});
+    expect(b?.tone).toBeUndefined();
+    expect(b?.id).toMatch(/^b/);
+  });
+});
