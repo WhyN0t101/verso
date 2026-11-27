@@ -19,11 +19,22 @@ function grade(root: THREE.Object3D): void {
   });
 }
 
-/** The glTF loader and its mesh decoder are their own chunk, fetched with the first model instead of with the page. */
-const loader = import('three/examples/jsm/loaders/GLTFLoader.js').then(async ({GLTFLoader}) => {
-  const {MeshoptDecoder} = await import('three/examples/jsm/libs/meshopt_decoder.module.js');
-  return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-});
+type Loader = InstanceType<(typeof import('three/examples/jsm/loaders/GLTFLoader.js'))['GLTFLoader']>;
+let loader: Promise<Loader> | null = null;
+
+/** The glTF loader and its mesh decoder are their own chunk, fetched with the first model instead of with the page. A failed fetch is not kept, so the next model tries again. */
+function getLoader(): Promise<Loader> {
+  loader ??= import('three/examples/jsm/loaders/GLTFLoader.js')
+    .then(async ({GLTFLoader}) => {
+      const {MeshoptDecoder} = await import('three/examples/jsm/libs/meshopt_decoder.module.js');
+      return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+    })
+    .catch((err: unknown) => {
+      loader = null;
+      throw err;
+    });
+  return loader;
+}
 const loaded = new Map<ModelName, Promise<THREE.Object3D>>();
 
 /**
@@ -34,7 +45,7 @@ const loaded = new Map<ModelName, Promise<THREE.Object3D>>();
 export async function loadModel(name: ModelName, height: number): Promise<THREE.Group> {
   let source = loaded.get(name);
   if (!source) {
-    source = loader.then((l) => l.loadAsync(`/models/${name}.glb`)).then((gltf) => {
+    source = getLoader().then((l) => l.loadAsync(`/models/${name}.glb`)).then((gltf) => {
       grade(gltf.scene);
       return gltf.scene;
     });
