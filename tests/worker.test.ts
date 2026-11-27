@@ -302,3 +302,23 @@ describe('/api/cover content type', () => {
     expect((await call('/api/cover?id=78')).headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 });
+
+describe('/api/search result fields come from an untrusted upstream', () => {
+  const doc = (extra: Record<string, unknown>) => ({key: '/works/OL5W', title: 'T', author_name: ['A'], ...extra});
+  const search = async (docs: unknown[], q: string) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => json({docs}));
+    return (await call(`/api/search?q=${q}`)).body as {results: {title: string; year: number | null; cover: string | null}[]};
+  };
+
+  it('builds a cover path only from a positive integer id', async () => {
+    const r = await search([doc({cover_i: '7&size=L'}), doc({key: '/works/OL6W', title: 'U', cover_i: 12.5}), doc({key: '/works/OL7W', title: 'V', cover_i: 0}), doc({key: '/works/OL8W', title: 'W', cover_i: 42})], 'covers1');
+    expect(r.results.map((x) => x.cover)).toEqual([null, null, null, '/api/cover?id=42']);
+  });
+
+  it('skips results whose title is not text, keeps only numeric years, and caps the title length', async () => {
+    const r = await search([doc({title: {x: 1}}), doc({key: '/works/OL6W', title: 'Long ' + 'x'.repeat(500), first_publish_year: '1999'}), doc({key: '/works/OL7W', title: 'Dated', first_publish_year: 1951})], 'fields1');
+    expect(r.results).toHaveLength(2);
+    expect(r.results[0]?.title.length).toBeLessThanOrEqual(150);
+    expect(r.results.map((x) => x.year)).toEqual([null, 1951]);
+  });
+});

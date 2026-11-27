@@ -28,6 +28,10 @@ describe('truncate', () => {
     expect(out.endsWith('…')).toBe(true);
     expect(out.length).toBeLessThanOrEqual(51);
   });
+  it('keeps every character of a long run with no spaces (CJK) instead of dropping the last one', () => {
+    const out = truncate('字'.repeat(80), 50);
+    expect(out).toBe('字'.repeat(50) + '…');
+  });
 });
 
 describe('matches with status', () => {

@@ -44,7 +44,9 @@ export function truncate(s: string, max = MAX_SUMMARY): string {
   const cut = s.slice(0, max);
   const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
   if (sentence > max * 0.5) return cut.slice(0, sentence + 1);
-  return cut.slice(0, cut.lastIndexOf(' ')).replace(/[\s,;:.]+$/, '') + '…';
+  // No space at all (CJK text): cut at the limit rather than dropping the last character.
+  const space = cut.lastIndexOf(' ');
+  return (space < 0 ? cut : cut.slice(0, space)).replace(/[\s,;:.]+$/, '') + '…';
 }
 
 /**
@@ -131,25 +133,32 @@ export interface WorkDetail {
   source: 'openlibrary' | 'google' | null;
 }
 
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+/** The same rule /api/cover enforces on its id. */
+const isCoverId = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0 && (v as number) < 1e12;
+
 async function search(q: string): Promise<SearchResult[]> {
   const fields = 'key,title,author_name,first_publish_year,subject,cover_i';
   const data = (await getJson(`${OL}/search.json?q=${encodeURIComponent(q)}&limit=8&fields=${fields}`)) as {docs?: OlDoc[]};
   const seen = new Set<string>();
   const out: SearchResult[] = [];
   for (const d of data.docs ?? []) {
-    const work = /^\/works\/(OL\d+W)$/.exec(d.key ?? '')?.[1];
-    if (!work || !d.title) continue;
-    const author = d.author_name?.[0] ?? '';
-    const dedupe = `${d.title.toLowerCase()}|${author.toLowerCase()}`;
+    const work = /^\/works\/(OL\d+W)$/.exec(typeof d.key === 'string' ? d.key : '')?.[1];
+    // The reply is third-party JSON: every field is checked for its type before it reaches the app.
+    const title = typeof d.title === 'string' ? d.title.slice(0, 150) : '';
+    if (!work || !title) continue;
+    const first = strings(d.author_name)[0];
+    const author = first ? first.slice(0, 100) : '';
+    const dedupe = `${title.toLowerCase()}|${author.toLowerCase()}`;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
     out.push({
       work,
-      title: d.title,
+      title,
       author,
-      year: d.first_publish_year ?? null,
-      genre: mapGenre(d.subject ?? []),
-      cover: d.cover_i ? `/api/cover?id=${d.cover_i}` : null,
+      year: Number.isInteger(d.first_publish_year) ? (d.first_publish_year as number) : null,
+      genre: mapGenre(strings(d.subject)),
+      cover: isCoverId(d.cover_i) ? `/api/cover?id=${d.cover_i}` : null,
     });
   }
   return out;
@@ -251,7 +260,7 @@ export function rankCovers(editions: OlEdition[], bookTitle: string): CoverChoic
   const seen = new Set<number>();
   const scored: {c: CoverChoice; score: number; order: number}[] = [];
   editions.forEach((e, order) => {
-    const id = (e.covers ?? []).find((n) => Number.isInteger(n) && n > 0 && n < 1e12);
+    const id = (e.covers ?? []).find(isCoverId);
     if (id === undefined || seen.has(id)) return;
     seen.add(id);
     const title = typeof e.title === 'string' ? e.title.slice(0, 150) : '';
