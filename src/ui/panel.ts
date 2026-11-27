@@ -104,6 +104,8 @@ export function initPanel(h: PanelHooks): void {
 }
 
 export function fillPanel(b: Book): void {
+  // An armed Delete belongs to the book it was armed on, not to whichever is opened next.
+  if (current !== b) resetDelete();
   current = b;
   // The panel takes its colour from the book's spine, so the open book and the page about it match.
   const look = spineLook(b);

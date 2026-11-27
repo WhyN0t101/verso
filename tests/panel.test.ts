@@ -103,6 +103,15 @@ describe('book panel', () => {
     expect(hooks.onDelete).toHaveBeenCalledWith(b);
   });
 
+  it('does not carry an armed delete over to the next book that is opened', async () => {
+    const {mod, hooks} = await setup();
+    dom.el('pDelete').click();
+    mod.showPanel(makeBook({title: 'Another'}));
+    expect(dom.el('pDelete').textContent).toBe('Delete');
+    dom.el('pDelete').click();
+    expect(hooks.onDelete).not.toHaveBeenCalled();
+  });
+
   it('does nothing for edit, export and delete once the panel is hidden', async () => {
     const {mod, hooks} = await setup();
     mod.hidePanel();
