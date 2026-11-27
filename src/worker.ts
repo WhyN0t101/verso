@@ -21,6 +21,8 @@ const USER_AGENT = 'Verso/0.1 (personal bookshelf app)';
 const MAX_SUMMARY = 500;
 const MAX_COVER_BYTES = 4 * 1024 * 1024;
 const COVER_SIZES = new Set(['S', 'M', 'L']);
+// An allow-list, not startsWith('image/'): this is our own origin, so image/svg+xml could run script if opened directly.
+const COVER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 const CDN = 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800';
 // A work with no summary anywhere is retried sooner, in case Google was only briefly unavailable.
@@ -330,14 +332,14 @@ async function handleCover(url: URL, ctx: Ctx): Promise<Response> {
     return await withCache(`${url.origin}/api/cover?id=${id}&size=${size}`, ctx, async () => {
       // default=false makes Open Library answer 404 instead of a blank placeholder, so callers can fall back.
       const r = await fetchUpstream(`https://covers.openlibrary.org/b/id/${id}-${size}.jpg?default=false`, {});
-      const type = r.headers.get('content-type') ?? '';
+      const type = (r.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
       if (r.status === 404) return json({error: 'no cover'}, 404, COVER_MISS_CC);
       // A 429 or 403 says nothing about the cover, so it must not be cached as a miss.
       if (!r.ok) throw new Error(`upstream ${r.status}`);
-      if (!type.startsWith('image/')) return json({error: 'no cover'}, 404, COVER_MISS_CC);
+      if (!COVER_TYPES.has(type)) return json({error: 'no cover'}, 404, COVER_MISS_CC);
       const buf = await r.arrayBuffer();
       if (buf.byteLength > MAX_COVER_BYTES) return json({error: 'cover too large'}, 502);
-      return new Response(buf, {status: 200, headers: {'Content-Type': type, 'Cache-Control': COVER_CC}});
+      return new Response(buf, {status: 200, headers: {'Content-Type': type, 'Cache-Control': COVER_CC, 'X-Content-Type-Options': 'nosniff'}});
     });
   } catch (err) {
     console.error('cover proxy failed', String(err));

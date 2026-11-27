@@ -290,3 +290,15 @@ describe('cover choices', () => {
     expect((await call('/api/covers?title=x')).status).toBe(400);
   });
 });
+
+describe('/api/cover content type', () => {
+  it('never serves an upstream type a browser could run (svg, html)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response('<svg onload="alert(1)"/>', {headers: {'Content-Type': 'image/svg+xml'}})));
+    expect((await call('/api/cover?id=77')).status).toBe(404);
+  });
+
+  it('marks images nosniff', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(new Uint8Array([1]), {headers: {'Content-Type': 'image/jpeg'}})));
+    expect((await call('/api/cover?id=78')).headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+});
