@@ -12,7 +12,7 @@ import {faceColors} from './bookTextures';
 import type {Entry} from './entry';
 import {boardGeo, type Wood} from './wood';
 
-export const ROW_H = 2.55;
+const ROW_H = 2.55;
 const BOARD = 0.16;
 const SIDE = 0.22;
 export const DEPTH = 1.7;

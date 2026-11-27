@@ -8,7 +8,7 @@ const NARROW_BAR_PX = 64;
 
 export const isMobile = (): boolean => innerWidth <= 760;
 /** Height in pixels of the top bar, which covers part of the canvas. */
-export const headerPx = (): number => document.getElementById('bar')?.getBoundingClientRect().height ?? 64;
+const headerPx = (): number => document.getElementById('bar')?.getBoundingClientRect().height ?? 64;
 
 /**
  * The camera and where it is heading. Panning slides along the wall (x); distance and height frame the

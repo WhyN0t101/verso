@@ -5,7 +5,7 @@ import {MIN_CONTRAST, contrastRatio, hslToRgb, luminance, spineScheme, type Spin
 /** Literata: what a person wrote or a book owns (titles, notes, signage). Atkinson Hyperlegible Next: small interface text. */
 export const SERIF = 'Literata,Georgia,serif';
 export const SANS = '"Atkinson Hyperlegible Next",system-ui,sans-serif';
-export const CREAM = '#f6ead4';
+const CREAM = '#f6ead4';
 
 /** Base hue and saturation for a book: from its cover when it has one, else from the title hash. */
 export interface Palette {
@@ -25,7 +25,6 @@ function setLS(g: CanvasRenderingContext2D, px: number): void {
   // letterSpacing is missing in older Safari; the text just renders unspaced there.
   if ('letterSpacing' in g) g.letterSpacing = px + 'px';
 }
-export const letterSpacing = setLS;
 
 export function wrapAll(g: CanvasRenderingContext2D, text: string, maxW: number): string[] {
   const words = String(text).replace(/\s+/g, ' ').trim().split(' ');

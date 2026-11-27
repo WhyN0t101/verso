@@ -13,7 +13,7 @@ export interface Env {
   ASSETS: {fetch(req: Request): Promise<Response>};
   GOOGLE_BOOKS_API_KEY?: string;
 }
-export interface Ctx {
+interface Ctx {
   waitUntil(p: Promise<unknown>): void;
 }
 
