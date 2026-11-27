@@ -67,6 +67,7 @@ export function initExport(): void {
     const btn = document.createElement('button');
     btn.className = 'btn' + (t.id === state.theme ? ' on' : '');
     btn.dataset.theme = t.id;
+    btn.setAttribute('aria-pressed', String(t.id === state.theme));
     btn.textContent = t.label;
     themes.appendChild(btn);
   }
@@ -75,7 +76,11 @@ export function initExport(): void {
     const id = THEMES.find((t) => t.id === key)?.id;
     if (!id) return;
     state.theme = id;
-    for (const el of themes.children) el.classList.toggle('on', el instanceof HTMLElement && el.dataset.theme === id);
+    for (const el of themes.children) {
+      const on = el instanceof HTMLElement && el.dataset.theme === id;
+      el.classList.toggle('on', on);
+      el.setAttribute('aria-pressed', String(on));
+    }
     void render();
   });
   $('exSeg').addEventListener('click', (ev) => {
@@ -83,7 +88,11 @@ export function initExport(): void {
     const fmt = FORMATS.find((f) => f === key);
     if (!fmt) return;
     state.fmt = fmt;
-    for (const el of $('exSeg').children) el.classList.toggle('on', el instanceof HTMLElement && el.dataset.fmt === fmt);
+    for (const el of $('exSeg').children) {
+      const on = el instanceof HTMLElement && el.dataset.fmt === fmt;
+      el.classList.toggle('on', on);
+      el.setAttribute('aria-pressed', String(on));
+    }
     void render();
   });
   $('exClose').addEventListener('click', closeExport);

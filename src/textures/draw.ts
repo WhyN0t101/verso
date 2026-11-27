@@ -27,17 +27,36 @@ function setLS(g: CanvasRenderingContext2D, px: number): void {
 }
 export const letterSpacing = setLS;
 
+/** Splits one word that is wider than `maxW` into pieces that fit, by character: CJK text has no spaces to break on. */
+function breakWord(g: CanvasRenderingContext2D, word: string, maxW: number): string[] {
+  const pieces: string[] = [];
+  let cur = '';
+  // Array.from walks code points, so a surrogate pair (an emoji, a rare ideograph) is never cut in half.
+  for (const ch of Array.from(word)) {
+    if (cur && g.measureText(cur + ch).width > maxW) {
+      pieces.push(cur);
+      cur = ch;
+    } else cur += ch;
+  }
+  if (cur) pieces.push(cur);
+  return pieces;
+}
+
 export function wrapAll(g: CanvasRenderingContext2D, text: string, maxW: number): string[] {
   const words = String(text).replace(/\s+/g, ' ').trim().split(' ');
   const lines: string[] = [];
   let cur = '';
-  for (const w of words) {
-    const t = cur ? cur + ' ' + w : w;
-    if (!cur || g.measureText(t).width <= maxW) cur = t;
-    else {
-      lines.push(cur);
-      cur = w;
-    }
+  for (const word of words) {
+    const parts = g.measureText(word).width > maxW ? breakWord(g, word, maxW) : [word];
+    parts.forEach((w, i) => {
+      const t = cur ? cur + ' ' + w : w;
+      // The pieces of a broken word each fill a line, so a later piece never joins the one before it.
+      if (!cur || (i === 0 && g.measureText(t).width <= maxW)) cur = t;
+      else {
+        lines.push(cur);
+        cur = w;
+      }
+    });
   }
   if (cur) lines.push(cur);
   return lines;
