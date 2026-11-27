@@ -11,6 +11,7 @@ const STATUSES: (Status | undefined)[] = ['wishlist', 'reading', 'finished', und
 /** Deterministic test shelf, so runs are comparable. Titles vary in length like real ones. */
 export function generateBooks(n: number, withCovers = false): Book[] {
   const r = rng(42);
+  // Dev only, and every list passed in is non-empty, so the index is always in range.
   const pick = <T>(a: readonly T[]): T => a[Math.floor(r() * a.length)] as T;
   return Array.from({length: n}, (_, i) => {
     const words = 1 + Math.floor(r() * 5);

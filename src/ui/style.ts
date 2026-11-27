@@ -1,7 +1,7 @@
-import type {LightId, Settings, WoodId} from '../types';
+import type {Settings} from '../types';
 import {state, persist} from '../state';
 import {$, toast} from '../util';
-import {BACKGROUNDS, LIGHTS, WOODS, imageBackgroundCss} from '../presets';
+import {BACKGROUNDS, LIGHTS, WOODS, imageBackgroundCss, isLightId, isWoodId} from '../presets';
 import {STUDY, encodeWithinLimit} from '../data/settings';
 
 const MAX_IMAGE_SIDE = 1600;
@@ -24,6 +24,9 @@ async function imageToDataUrl(file: File): Promise<string> {
   bmp.close();
   return encodeWithinLimit((q) => c.toDataURL('image/jpeg', q));
 }
+
+/** The data-id of the swatch button a click landed on, if any. */
+const optionId = (ev: Event): string | undefined => (ev.target instanceof Element ? ev.target.closest<HTMLElement>('.opt')?.dataset.id : undefined);
 
 function option(group: HTMLElement, id: string, label: string, swatchCss: string | null, on: boolean): HTMLButtonElement {
   const b = document.createElement('button');
@@ -74,15 +77,15 @@ export function initStyle(onSettingsChange: () => void): void {
     renderGroups();
   };
   $('stWood').addEventListener('click', (ev) => {
-    const id = (ev.target as HTMLElement).closest<HTMLElement>('.opt')?.dataset.id;
-    if (id) change((s) => (s.wood = id as WoodId));
+    const id = optionId(ev);
+    if (isWoodId(id)) change((s) => (s.wood = id));
   });
   $('stLight').addEventListener('click', (ev) => {
-    const id = (ev.target as HTMLElement).closest<HTMLElement>('.opt')?.dataset.id;
-    if (id) change((s) => (s.light = id as LightId));
+    const id = optionId(ev);
+    if (isLightId(id)) change((s) => (s.light = id));
   });
   $('stBg').addEventListener('click', (ev) => {
-    const id = (ev.target as HTMLElement).closest<HTMLElement>('.opt')?.dataset.id;
+    const id = optionId(ev);
     // Picking the "Your image" swatch again is a no-op; presets replace the image until a new upload.
     if (id && id !== 'image') change((s) => (s.background = {kind: 'preset', id}));
   });
@@ -94,10 +97,10 @@ export function initStyle(onSettingsChange: () => void): void {
   );
   $('stRemoveImg').addEventListener('click', () => change((s) => (s.background = {...STUDY.background})));
   $('stStudy').addEventListener('click', () => change(applyStudy));
-  $<HTMLInputElement>('stUpload').addEventListener('change', async (ev) => {
-    const input = ev.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
+  const upload = $<HTMLInputElement>('stUpload');
+  upload.addEventListener('change', async () => {
+    const file = upload.files?.[0];
+    upload.value = '';
     if (!file) return;
     try {
       const data = await imageToDataUrl(file);

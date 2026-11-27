@@ -43,6 +43,7 @@ function renderStars(b: Book): void {
 function renderStatus(b: Book): void {
   const box = $('pStatus');
   box.replaceChildren();
+  // Keys of a Record<Status, string>, so they are Statuses; Object.keys only widens them to string.
   for (const id of Object.keys(STATUS_LABELS) as Status[]) {
     const chip = document.createElement('button');
     chip.type = 'button';
@@ -75,15 +76,17 @@ function resetDelete(): void {
 export function initPanel(h: PanelHooks): void {
   hooks = h;
   $('close').addEventListener('click', h.onClose);
-  $('pNotes').addEventListener('input', (ev) => {
+  const notes = $<HTMLTextAreaElement>('pNotes');
+  notes.addEventListener('input', () => {
     if (!current) return;
-    current.notes = (ev.target as HTMLTextAreaElement).value;
+    current.notes = notes.value;
     clearTimeout(saveTimer);
     saveTimer = window.setTimeout(h.onChange, 300);
   });
-  $('pFinished').addEventListener('change', (ev) => {
+  const finished = $<HTMLInputElement>('pFinished');
+  finished.addEventListener('change', () => {
     if (!current || current.status !== 'finished') return;
-    const date = isoDate((ev.target as HTMLInputElement).value);
+    const date = isoDate(finished.value);
     if (date) current.finishedOn = date;
     else delete current.finishedOn;
     h.onChange();
@@ -104,6 +107,8 @@ export function initPanel(h: PanelHooks): void {
 }
 
 export function fillPanel(b: Book): void {
+  // An armed Delete belongs to the book it was armed on, not to whichever is opened next.
+  if (current !== b) resetDelete();
   current = b;
   // The panel takes its colour from the book's spine, so the open book and the page about it match.
   const look = spineLook(b);

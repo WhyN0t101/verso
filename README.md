@@ -41,7 +41,8 @@ For UI work with hot reload, run `npm run dev`: it starts Vite and the Worker to
 ## API
 
 - `GET /api/search?q=<text>` returns candidate books (title, author, year, mapped genre, cover path).
-- `GET /api/search?work=<OL id>&title=&author=` returns `{summary, genre, source}`.
+- `GET /api/search?work=<OL id>` returns `{summary, genre, source}`. Title and author for the Google Books fallback come from Open Library's own record, never from the request.
+- `GET /api/covers?title=<text>&author=<text>` returns `{choices}`: candidate edition covers, best match first, each with an own-origin `cover` path.
 - `GET /api/cover?id=<numeric Open Library cover id>&size=S|M|L` streams the image from our origin.
 
 Responses go through the Workers Cache API and carry `Cache-Control` headers. Subjects are mapped to a fixed list in `shared/genres.ts`.
@@ -54,16 +55,24 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [AGENTS.md](AGENTS.m
 
 ```
 shared/         genre list and mapping, used by the Worker and the app
-src/worker.ts   Cloudflare Worker: /api/search and /api/cover
-src/data/       book model, storage, settings, backup/import
+src/worker.ts   Cloudflare Worker: /api/search, /api/covers and /api/cover; everything else goes to the static assets
+src/api.ts      browser client for the Worker's API
+src/covers.ts   cover loading (own-origin proxy, request sharing, two lanes) and dominant colour
+src/toneQueue.ts  background queue that fills in the colour of covers that have none
+src/state.ts    the one shared state object, and persisting it
+src/search.ts   the search and status filter
+src/data/       book model, storage, settings, backup/import, bulk delete
 src/scene/      Three.js wall: wall.ts (pure layout and camera targeting), shelf.ts, room.ts (floor, lamps, props), assets.ts (glTF loader)
 src/textures/   canvas drawing for spines and generated covers
 src/export/     export card drawing
-src/ui/         panel, add/edit form, export dialog, style dialog, list view
-tests/          Vitest unit tests
+src/ui/         panel, add/edit form, export dialog, style dialog, jump list, select mode, list view
+src/dev/        generated test shelf (dev only)
+public/         favicon, CC0 photo textures and glTF models (CREDITS.md in each folder)
+tests/          Vitest unit tests; tests/helpers/fakeDom.ts is a minimal stand-in for the DOM
+docs/           design notes and plans
 ```
 
 ## Notes
 
-- Fonts (Inter, Playfair Display) are bundled with `@fontsource`; the app waits for them before drawing any canvas.
+- Fonts (Literata for titles and notes, Atkinson Hyperlegible Next for small interface text) are bundled with `@fontsource`; the app waits for them before drawing any canvas.
 - Textures are created lazily: spines for rows near the camera, the cover face on first selection. Textures of deleted or edited books are disposed on rebuild.

@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {paletteOf} from '../src/textures/draw';
-import {buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
+import {applyImport, buildBackup, mergeBooks, parseBackup} from '../src/data/backup';
 import {applyStatus, finishedLabel, isoDate, makeBook, sanitizeBook, todayIso, updateBook} from '../src/data/books';
 import {DEFAULT_SETTINGS, sanitizeSettings} from '../src/data/settings';
 
@@ -246,5 +246,20 @@ describe('backup size limit', () => {
     const books = Array.from({length: 10_001}, () => ({title: 'x'}));
     expect(() => parseBackup(JSON.stringify({app: 'verso', version: 1, books}))).toThrow(/too many books/);
     expect(parseBackup(JSON.stringify({app: 'verso', version: 1, books: books.slice(0, 10_000)})).books).toHaveLength(10_000);
+  });
+});
+
+describe('applyImport', () => {
+  it('replaces the untouched demo shelf instead of mixing the import into it', () => {
+    const demo = [book('Demo 1'), book('Demo 2')];
+    const out = applyImport(demo, true, [book('Mine')]);
+    expect(out.books.map((b) => b.title)).toEqual(['Mine']);
+  });
+
+  it('merges into a real shelf, keeping what is there', () => {
+    const mine = [book('A')];
+    const out = applyImport(mine, false, [book('B')]);
+    expect(out.books.map((b) => b.title)).toEqual(['A', 'B']);
+    expect(out.added).toBe(1);
   });
 });

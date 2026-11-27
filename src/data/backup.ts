@@ -1,4 +1,5 @@
 import type {Book, Settings} from '../types';
+import {asRecord} from '../../shared/untrusted';
 import {sanitizeBooks} from './books';
 import {sanitizeSettings} from './settings';
 
@@ -26,8 +27,8 @@ export function parseBackup(text: string): ParsedBackup {
   } catch {
     throw new Error('That file is not valid JSON.');
   }
-  const o = data as {app?: unknown; version?: unknown; books?: unknown; settings?: unknown} | null;
-  if (!o || typeof o !== 'object' || o.app !== APP || !Array.isArray(o.books)) throw new Error('That file is not a Verso backup.');
+  const o = asRecord(data);
+  if (o.app !== APP || !Array.isArray(o.books)) throw new Error('That file is not a Verso backup.');
   if (typeof o.version === 'number' && o.version > VERSION) throw new Error('That backup was made by a newer version of Verso.');
   if (o.books.length > MAX_BOOKS) throw new Error('That backup holds too many books.');
   const books = sanitizeBooks(o.books);
@@ -48,4 +49,9 @@ export function mergeBooks(current: Book[], incoming: Book[]): {books: Book[]; a
     byId.set(b.id, b);
   }
   return {books: [...byId.values()], added, updated};
+}
+
+/** What an import produces. While the shelf is still the untouched demo seed it is replaced, not merged into. */
+export function applyImport(current: Book[], seeded: boolean, incoming: Book[]): {books: Book[]; added: number; updated: number} {
+  return mergeBooks(seeded ? [] : current, incoming);
 }

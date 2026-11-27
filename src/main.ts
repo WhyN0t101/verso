@@ -18,7 +18,7 @@ import {createToneQueue} from './toneQueue';
 import {dominantTone, loadCover} from './covers';
 import {initStyle, openStyle, closeStyle, applyBackground, applyStudy} from './ui/style';
 import {STORAGE_KEY} from './data/storage';
-import {buildBackup,mergeBooks, parseBackup} from './data/backup';
+import {applyImport, buildBackup, parseBackup} from './data/backup';
 
 // Books drawn before the cloth photo arrives stay plain, so it gets a moment, but never holds the page up.
 await Promise.all([fontsReady, Promise.race([clothReady, new Promise((r) => setTimeout(r, 1500))])]);
@@ -42,6 +42,7 @@ function select(id: string): void {
   const b = findBook(id);
   if (!b) return;
   state.sel = id;
+  shelf?.wake();
   showPanel(b);
   hint.style.opacity = '0';
   tip.style.opacity = '0';
@@ -56,6 +57,7 @@ function activate(id: string): void {
 
 function deselect(): void {
   state.sel = null;
+  shelf?.wake();
   hidePanel();
   hint.style.opacity = '1';
   document.body.classList.remove('book-open');
@@ -229,17 +231,17 @@ $('exportBackup').addEventListener('click', () => {
   toast(`Backed up ${state.books.length} books.`);
 });
 $('importBackup').addEventListener('click', () => $('importFile').click());
-$<HTMLInputElement>('importFile').addEventListener('change', async (ev) => {
-  const input = ev.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = '';
+const importFile = $<HTMLInputElement>('importFile');
+importFile.addEventListener('change', async () => {
+  const file = importFile.files?.[0];
+  importFile.value = '';
   if (!file) return;
   try {
     const parsed = parseBackup(await file.text());
     const ok = confirm(`Import ${parsed.books.length} books? Books with the same id on this shelf will be overwritten.`);
     if (!ok) return;
     if (state.sel) deselect();
-    const merged = mergeBooks(state.seeded ? [] : state.books, parsed.books);
+    const merged = applyImport(state.books, state.seeded, parsed.books);
     state.books = merged.books;
     if (parsed.settings) state.settings = parsed.settings;
     persist();
@@ -268,8 +270,9 @@ function filterChanged(): void {
   shelf?.revealMatch();
 }
 
-$('q').addEventListener('input', (ev) => {
-  state.q = (ev.target as HTMLInputElement).value.trim().toLowerCase();
+const search = $<HTMLInputElement>('q');
+search.addEventListener('input', () => {
+  state.q = search.value.trim().toLowerCase();
   filterChanged();
 });
 function renderStatusChips(): void {
@@ -309,7 +312,7 @@ $('q').addEventListener('keydown', (ev) => {
   if (!first) return;
   shelf?.focusBook(first.id);
   activate(first.id);
-  (ev.target as HTMLElement).blur();
+  search.blur();
 });
 
 addEventListener('keydown', (ev) => {

@@ -20,6 +20,8 @@ export const WOODS: Record<WoodId, WoodPreset> = {
   cherry: {label: 'Cherry', base: '#7a3b27', dark: '40,12,6', light: '176,92,64', stain: 0.7},
 };
 
+export const isWoodId = (v: unknown): v is WoodId => typeof v === 'string' && Object.hasOwn(WOODS, v);
+
 export interface LightPreset {
   label: string;
   hemiSky: number;
@@ -39,6 +41,8 @@ export const LIGHTS: Record<LightId, LightPreset> = {
   evening: {label: 'Evening', hemiSky: 0xffb98a, hemiGround: 0x1a1220, hemi: 0.5, key: 1.0, keyColor: 0xff9a52, fill: 0.22, fillColor: 0x6a7bd6},
   bright: {label: 'Bright', hemiSky: 0xffffff, hemiGround: 0x4a4038, hemi: 1.25, key: 1.0, keyColor: 0xfff4e0, fill: 0.2, fillColor: 0xcfd8ff},
 };
+
+export const isLightId = (v: unknown): v is LightId => typeof v === 'string' && Object.hasOwn(LIGHTS, v);
 
 export interface BackgroundPreset {
   id: string;

@@ -1,4 +1,4 @@
-import type {Book, Settings, Status} from './types';
+import type {Book, Status} from './types';
 import {load, save} from './data/storage';
 import {toast} from './util';
 import type {ThemeId} from './export/themes';
@@ -6,8 +6,8 @@ import type {ThemeId} from './export/themes';
 const stored = load();
 
 export const state = {
-  books: stored.books as Book[],
-  settings: stored.settings as Settings,
+  books: stored.books,
+  settings: stored.settings,
   sel: null as string | null,
   q: '',
   /** Select mode for bulk removal, and the ids picked in it. */
@@ -18,7 +18,6 @@ export const state = {
   section: null as {name: string; genres: string[]} | null,
   fmt: 'post' as 'post' | 'story' | 'square',
   theme: 'classic' as ThemeId,
-  editing: null as string | null,
   /** Demo books not yet saved: an import replaces them instead of merging into them. */
   seeded: !!stored.seeded,
 };

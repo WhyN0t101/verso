@@ -68,6 +68,8 @@ async function fetchImage(url: string, signal: AbortSignal): Promise<Outcome> {
 
 interface InFlight {
   promise: Promise<HTMLImageElement | null>;
+  /** Settles `promise`; kept here so the lane code can answer without a side table. */
+  resolve(img: HTMLImageElement | null): void;
   /** Stops the fetch itself. */
   ctl: AbortController;
   /** Stops only the wait for a slot, used to move a queued request to a faster lane. */
@@ -83,7 +85,8 @@ const settled = new Map<string, HTMLImageElement | null>();
 const MAX_SETTLED = 64;
 function remember(url: string, img: HTMLImageElement | null): void {
   settled.set(url, img);
-  if (settled.size > MAX_SETTLED) settled.delete(settled.keys().next().value as string);
+  const oldest = settled.keys().next();
+  if (settled.size > MAX_SETTLED && !oldest.done) settled.delete(oldest.value);
 }
 
 export interface LoadOptions {
@@ -124,13 +127,10 @@ export function loadCover(url: string, opts: LoadOptions = {}): Promise<HTMLImag
   return e.promise;
 }
 
-const resolvers = new WeakMap<InFlight, (img: HTMLImageElement | null) => void>();
-
 function startRequest(url: string, inBackground: boolean): InFlight {
   let resolve!: (img: HTMLImageElement | null) => void;
   const promise = new Promise<HTMLImageElement | null>((r) => (resolve = r));
-  const entry: InFlight = {promise, ctl: new AbortController(), queueCtl: new AbortController(), inBackground, started: false, users: 0};
-  resolvers.set(entry, resolve);
+  const entry: InFlight = {promise, resolve, ctl: new AbortController(), queueCtl: new AbortController(), inBackground, started: false, users: 0};
   inflight.set(url, entry);
   void promise.finally(() => {
     if (inflight.get(url) === entry) inflight.delete(url);
@@ -141,7 +141,6 @@ function startRequest(url: string, inBackground: boolean): InFlight {
 
 /** Waits for a slot in the lane and fetches. Calling it again replaces the earlier wait (lane upgrade). */
 function enqueue(url: string, entry: InFlight, inBackground: boolean): void {
-  const resolve = resolvers.get(entry);
   const previous = entry.queueCtl;
   const mine = (entry.queueCtl = new AbortController());
   entry.inBackground = inBackground;
@@ -155,13 +154,13 @@ function enqueue(url: string, entry: InFlight, inBackground: boolean): void {
   )
     .then((o) => {
       if (o.final) remember(url, o.img);
-      resolve?.(o.img);
+      entry.resolve(o.img);
     })
     .catch((err: unknown) => {
       // Replaced by a faster lane: that attempt settles the request.
       if (isAbort(err) && entry.queueCtl !== mine) return;
       if (!isAbort(err)) console.warn('cover failed', url, err);
-      resolve?.(null);
+      entry.resolve(null);
     });
   if (previous !== mine) previous.abort();
 }
@@ -212,9 +211,9 @@ export function dominantTone(img: HTMLImageElement): Tone {
     }
   }
   if (best < 0) return {h: 30, s: 6, l: clamp(Math.round((greyL / Math.max(grey, 1)) * 100), 0, 100)};
-  const w = weight[best] as number;
-  const h = (Math.atan2((sy[best] as number) / w, (sx[best] as number) / w) * 180) / Math.PI;
-  return {h: Math.round((h + 360) % 360), s: Math.round(((sSum[best] as number) / w) * 100), l: Math.round(((lSum[best] as number) / w) * 100)};
+  const w = weight[best] ?? 1;
+  const h = (Math.atan2((sy[best] ?? 0) / w, (sx[best] ?? 0) / w) * 180) / Math.PI;
+  return {h: Math.round((h + 360) % 360), s: Math.round(((sSum[best] ?? 0) / w) * 100), l: Math.round(((lSum[best] ?? 0) / w) * 100)};
 }
 
 function rgbToHsl(r8: number, g8: number, b8: number): [number, number, number] {
