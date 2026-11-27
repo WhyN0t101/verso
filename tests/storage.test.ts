@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {STORAGE_KEY, load, save} from '../src/data/storage';
-import {DEFAULT_SETTINGS, sanitizeSettings} from '../src/data/settings';
+import {DEFAULT_SETTINGS, MAX_IMAGE_CHARS, encodeWithinLimit, sanitizeSettings} from '../src/data/settings';
 
 let store: Map<string, string>;
 beforeEach(() => {
@@ -63,5 +63,17 @@ describe('room props setting', () => {
     expect(sanitizeSettings({props: true}).props).toBe(true);
     expect(sanitizeSettings({props: 'yes'})).not.toHaveProperty('props');
     expect(sanitizeSettings(undefined)).not.toHaveProperty('props');
+  });
+});
+
+describe('encodeWithinLimit', () => {
+  it('lowers the quality until the image fits what sanitizeSettings will accept', () => {
+    const tried: number[] = [];
+    const data = encodeWithinLimit((q) => (tried.push(q), q > 0.6 ? 'x'.repeat(MAX_IMAGE_CHARS + 1) : 'ok'));
+    expect(data).toBe('ok');
+    expect(tried).toEqual([0.82, 0.7, 0.55]);
+  });
+  it('gives up with an error when even the lowest quality is too big', () => {
+    expect(() => encodeWithinLimit(() => 'x'.repeat(MAX_IMAGE_CHARS + 1))).toThrow(/too large/);
   });
 });
