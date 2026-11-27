@@ -1,5 +1,6 @@
 import type {Book} from '../types';
-import {accOf, paletteOf, sat} from '../textures/draw';
+import {paletteOf, sat} from '../textures/draw';
+import {contrastRatio, hslToRgb, luminance} from '../textures/contrast';
 import {clamp, hsl} from '../util';
 
 export type ThemeId = 'classic' | 'paper' | 'bold' | 'minimal' | 'shelf';
@@ -25,13 +26,27 @@ function vertical(g: CanvasRenderingContext2D, H: number, top: string, bottom: s
   g.fillStyle = grad;
 }
 
+/** The Bold theme's muted text is white at this opacity (see its `mute`). */
+const BOLD_MUTE_ALPHA = 0.85;
+
+/** Lightness at or below `l` where the Bold theme's muted white text still reaches 4.5:1 on the hue. */
+export function boldLightness(h: number, s: number, l: number): number {
+  for (let at = l; at > 4; at--) {
+    const [r, g, b] = hslToRgb(h, s, at);
+    const over = (v: number) => Math.round(255 * BOLD_MUTE_ALPHA + v * (1 - BOLD_MUTE_ALPHA));
+    if (contrastRatio(luminance(over(r), over(g), over(b)), luminance(r, g, b)) >= 4.5) return at;
+  }
+  return 4;
+}
+
 export const THEMES: Theme[] = [
   {
     id: 'classic',
     label: 'Classic',
     ink: '#f6ead4',
     mute: 'rgba(246,234,212,.74)',
-    accent: accOf,
+    // Lighter than the spine accent: it must read as text on the glow behind the header.
+    accent: (b) => hsl((paletteOf(b).h + 28) % 360, 60, 86),
     shadow: 60,
     paint(g, W, H, b) {
       const p = paletteOf(b);
@@ -49,7 +64,7 @@ export const THEMES: Theme[] = [
     label: 'Paper',
     ink: '#2a2118',
     mute: 'rgba(42,33,24,.72)',
-    accent: (b) => hsl(paletteOf(b).h, 45, 32),
+    accent: (b) => hsl(paletteOf(b).h, 50, 22),
     shadow: 34,
     paint(g, W, H) {
       vertical(g, H, '#f6eedf', '#e8dcc3');
@@ -70,9 +85,10 @@ export const THEMES: Theme[] = [
     shadow: 50,
     paint(g, W, H, b) {
       const p = paletteOf(b);
-      // Lightness stays low enough for white text to keep contrast on any hue.
       const s = clamp(p.s + 28, 50, 78);
-      vertical(g, H, hsl(p.h, s, 40), hsl((p.h + 16) % 360, s, 28));
+      const h2 = (p.h + 16) % 360;
+      // Yellows and greens are bright at any saturation, so lightness is lowered per hue until white text reads.
+      vertical(g, H, hsl(p.h, s, boldLightness(p.h, s, 40)), hsl(h2, s, boldLightness(h2, s, 28)));
       g.fillRect(0, 0, W, H);
     },
   },

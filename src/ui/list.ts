@@ -8,7 +8,13 @@ export function renderList(onOpen: (id: string) => void): void {
   const ul = $('listView');
   ul.replaceChildren();
   const shown = state.books.filter((b) => matches(b, state.q, state.status, state.section?.genres ?? null));
-  for (const b of shown) ul.appendChild(row(b, onOpen));
+  for (const b of shown) {
+    // role=list needs listitem children, and a button must not take that role itself.
+    const item = document.createElement('div');
+    item.setAttribute('role', 'listitem');
+    item.appendChild(row(b, onOpen));
+    ul.appendChild(item);
+  }
   if (!shown.length) {
     const p = document.createElement('p');
     p.className = 'list-empty';
@@ -30,6 +36,7 @@ function row(b: Book, onOpen: (id: string) => void): HTMLElement {
   const stars = document.createElement('span');
   stars.className = 'list-stars';
   stars.textContent = b.rating ? '★'.repeat(b.rating) : '';
+  if (b.rating) stars.setAttribute('aria-label', `${b.rating} ${b.rating === 1 ? 'star' : 'stars'}`);
   li.append(title, meta, stars);
   li.addEventListener('click', () => onOpen(b.id));
   return li;

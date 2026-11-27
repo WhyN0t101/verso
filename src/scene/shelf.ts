@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {mergeGeometries} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type {Book} from '../types';
 import {state} from '../state';
 import {matches} from '../search';
@@ -10,6 +11,8 @@ import {SERIF, bookKind, drawCover, pagesCanvas, paletteOf, sat, spineCanvas, sp
 import {largeCover, loadCover} from '../covers';
 import {createRoom} from './room';
 import {contactShadow, loadModel, type ModelName} from './assets';
+import {packBookFaces} from './faces';
+import {layoutPlate} from './plate';
 import {tintFor} from './tint';
 import {CASE_ROWS, caseX, clampCase, fasciaText, firstMatchCase, layoutWall, nearestCase, snapCase, type SectionInfo, type Wall} from './wall';
 
@@ -80,6 +83,8 @@ const WIDTHS = [3.6, 4.2, 4.8];
 const FASCIA_H = 0.6;
 /** Crown moulding above the fascia: two stepped slabs. */
 const CORNICE_H = 0.14;
+/** How far the photographed wood is stained towards a preset's colour: 0 keeps the photo, 1 is the preset's flat colour. */
+const DEFAULT_STAIN = 0.55;
 /** World units covered by one repeat of the wood grain texture. */
 const WOOD_TILE = 1.9;
 /** How a binding looks and feels: corner radius, and how glossy the spine is. Paperbacks are soft and matt, jackets glossy. */
@@ -108,7 +113,7 @@ const headerPx = (): number => document.getElementById('bar')?.getBoundingClient
 const NARROW_BAR_PX = 64;
 // Lights lost an implicit factor of pi when three dropped "legacy" units; this keeps the prototype's look.
 const LIGHT_UNIT = Math.PI;
-const MAT = {cover: 0, back: 1, spine: 4} as const;
+const MAT = {cover: 0, back: 1, spine: 2} as const;
 // The cover face gets part of its brightness from the picture itself (emissive) so the lamp's warmth and
 // angle cannot wash it out: albedo * light + glow comes to about the picture's own brightness.
 const FACE_ALBEDO = 0.4;
@@ -268,8 +273,8 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     if (photo) {
       // The photographed grain is tinted so its average colour becomes the preset's wood colour.
       const base = new THREE.Color(WOODS[woodId].base);
-      // Only part of the way to the preset colour: the photo keeps its own depth and the stain does not turn it to paint.
-      const tint = new THREE.Color(1, 1, 1).lerp(new THREE.Color(base.r / photo.mean.r, base.g / photo.mean.g, base.b / photo.mean.b), 0.55);
+      // Part of the way to the preset colour, so the photo keeps its own depth; the dark woods go further (see WoodPreset.stain).
+      const tint = new THREE.Color(1, 1, 1).lerp(new THREE.Color(base.r / photo.mean.r, base.g / photo.mean.g, base.b / photo.mean.b), WOODS[woodId].stain ?? DEFAULT_STAIN);
       woodMat.map = photo.map;
       woodMat.normalMap = photo.normal;
       woodMat.bumpMap = null;
@@ -295,7 +300,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     fillL.intensity = L.fill * LIGHT_UNIT;
     room.setProps(!!state.settings.props);
   }
-  const room = createRoom(scene);
+  const room = createRoom(scene, maxAniso);
   applySettings();
 
   const frame = new THREE.Group();
@@ -377,13 +382,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       }
     });
   }
-  function box(w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, upright = false): THREE.Mesh {
+  /** A board's geometry already placed at x, y, z, so boards of one bookcase can be merged into a single mesh. */
+  function boardGeo(w: number, h: number, d: number, x: number, y: number, z: number, upright = false): THREE.BufferGeometry {
     const g = new THREE.BoxGeometry(w, h, d);
     // Each board takes its grain from a different part of the photo, so no two look cut from the same strip.
     const pick = rng(hash(`${x.toFixed(2)}|${y.toFixed(2)}|${z.toFixed(2)}`));
     woodUV(g, w, h, d, upright, pick(), pick());
-    const m = new THREE.Mesh(g, mat);
-    m.position.set(x, y, z);
+    return g.translate(x, y, z);
+  }
+  function shadowed(geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh {
+    const m = new THREE.Mesh(geo, mat);
     m.castShadow = m.receiveShadow = true;
     return m;
   }
@@ -401,17 +409,49 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
     brass.addColorStop(1, '#a8823d');
     g.fillStyle = brass;
     g.fillRect(0, 0, c.width, c.height);
+    // Brushed grain, a bevelled rim and a screw at each end, so the plate reads as metal fixed to the wood.
+    const grain = rng(hash('plate' + text));
+    for (let i = 0; i < 260; i++) {
+      g.fillStyle = grain() < 0.5 ? 'rgba(255,240,200,.07)' : 'rgba(60,35,10,.07)';
+      g.fillRect(0, grain() * c.height, c.width, 1);
+    }
+    g.lineWidth = 3;
+    g.strokeStyle = 'rgba(255,240,200,.55)';
+    g.strokeRect(2, 2, c.width - 4, c.height - 4);
+    g.strokeStyle = 'rgba(70,45,12,.55)';
+    g.beginPath();
+    g.moveTo(c.width - 1.5, 3);
+    g.lineTo(c.width - 1.5, c.height - 1.5);
+    g.lineTo(3, c.height - 1.5);
+    g.stroke();
+    for (const sx of [c.height * 0.5, c.width - c.height * 0.5]) {
+      g.fillStyle = 'rgba(70,45,12,.75)';
+      g.beginPath();
+      g.arc(sx, c.height / 2, c.height * 0.1, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#c9a65a';
+      g.beginPath();
+      g.arc(sx - 1, c.height / 2 - 1, c.height * 0.085, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(60,38,10,.8)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(sx - c.height * 0.06, c.height / 2 + c.height * 0.04);
+      g.lineTo(sx + c.height * 0.06, c.height / 2 - c.height * 0.04);
+      g.stroke();
+    }
     // Dark ink on brass: about 7:1, readable at a glance.
     g.fillStyle = '#2a1b0c';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    let fs = c.height * 0.62;
-    g.font = `600 ${fs}px ${SERIF}`;
-    while (g.measureText(text).width > c.width - 48 && fs > 14) {
-      fs -= 2;
-      g.font = `600 ${fs}px ${SERIF}`;
-    }
-    g.fillText(text, c.width / 2, c.height / 2 + fs * 0.04);
+    // Long names wrap onto two lines instead of shrinking until they cannot be read.
+    const {lines, fontSize} = layoutPlate(text, c.width - c.height * 1.3, c.height, (s, size) => {
+      g.font = `600 ${size}px ${SERIF}`;
+      return g.measureText(s).width;
+    });
+    g.font = `600 ${fontSize}px ${SERIF}`;
+    const leading = fontSize * 1.08;
+    lines.forEach((line, i) => g.fillText(line, c.width / 2, c.height / 2 + (i - (lines.length - 1) / 2) * leading + fontSize * 0.04));
     const map = new THREE.CanvasTexture(c);
     map.colorSpace = THREE.SRGBColorSpace;
     map.anisotropy = maxAniso;
@@ -631,26 +671,33 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       const Hc = rows * ROW_H + BOARD;
       const yc = baseY + Hc / 2;
       const ox = caseX(c.index, pitch);
-      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox - (innerW / 2 + SIDE / 2), yc, 0, true));
-      frame.add(box(SIDE, Hc, DEPTH, woodMat, ox + innerW / 2 + SIDE / 2, yc, 0, true));
-      frame.add(box(Wtot, Hc, 0.08, backMat, ox, yc, -DEPTH / 2 + 0.04));
-      for (let i = 0; i <= rows; i++) frame.add(box(innerW, BOARD, DEPTH, woodMat, ox, baseY + BOARD / 2 + i * ROW_H, 0));
+      // Every wooden part of a bookcase is merged into one mesh (and the shade strips into another): a case costs a few draws, not twenty.
+      const wood: THREE.BufferGeometry[] = [];
+      const shades: THREE.BufferGeometry[] = [];
+      wood.push(boardGeo(SIDE, Hc, DEPTH, ox - (innerW / 2 + SIDE / 2), yc, 0, true));
+      wood.push(boardGeo(SIDE, Hc, DEPTH, ox + innerW / 2 + SIDE / 2, yc, 0, true));
+      frame.add(shadowed(boardGeo(Wtot, Hc, 0.08, ox, yc, -DEPTH / 2 + 0.04), backMat));
+      for (let i = 0; i <= rows; i++) wood.push(boardGeo(innerW, BOARD, DEPTH, ox, baseY + BOARD / 2 + i * ROW_H, 0));
       for (let i = 0; i < rows; i++) {
-        const shade = new THREE.Mesh(new THREE.PlaneGeometry(innerW, ROW_H - BOARD), rowShade);
-        shade.position.set(ox, baseY + BOARD + (i + 0.5) * ROW_H - BOARD / 2, -DEPTH / 2 + 0.085);
-        frame.add(shade);
+        shades.push(new THREE.PlaneGeometry(innerW, ROW_H - BOARD).translate(ox, baseY + BOARD + (i + 0.5) * ROW_H - BOARD / 2, -DEPTH / 2 + 0.085));
       }
-      frame.add(box(Wtot + 0.24, FASCIA_H, DEPTH + 0.12, woodMat, ox, baseY + Hc + FASCIA_H / 2, 0.03));
+      wood.push(boardGeo(Wtot + 0.24, FASCIA_H, DEPTH + 0.12, ox, baseY + Hc + FASCIA_H / 2, 0.03));
       const crown = baseY + Hc + FASCIA_H;
-      frame.add(box(Wtot + 0.3, CORNICE_H * 0.45, DEPTH + 0.2, woodMat, ox, crown + CORNICE_H * 0.225, 0.05));
-      frame.add(box(Wtot + 0.46, CORNICE_H * 0.55, DEPTH + 0.3, woodMat, ox, crown + CORNICE_H * 0.725, 0.08));
-      frame.add(box(Wtot + 0.12, PLINTH_H, DEPTH + 0.06, woodMat, ox, baseY - PLINTH_H / 2, 0.02));
+      wood.push(boardGeo(Wtot + 0.3, CORNICE_H * 0.45, DEPTH + 0.2, ox, crown + CORNICE_H * 0.225, 0.05));
+      wood.push(boardGeo(Wtot + 0.46, CORNICE_H * 0.55, DEPTH + 0.3, ox, crown + CORNICE_H * 0.725, 0.08));
+      wood.push(boardGeo(Wtot + 0.12, PLINTH_H, DEPTH + 0.06, ox, baseY - PLINTH_H / 2, 0.02));
       const sign = fasciaText(c.sections);
       if (sign) frame.add(fasciaPlate(sign, ox, baseY + Hc + FASCIA_H / 2));
       for (const bk of c.bookends) {
         const shelf = baseY + BOARD + (rows - 1 - bk.row) * ROW_H;
-        frame.add(box(0.05, 1.1, 0.8, woodMat, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
+        wood.push(boardGeo(0.05, 1.1, 0.8, ox - innerW / 2 + 0.06 + bk.x + 0.025, shelf + 0.55, -DEPTH / 2 + 0.5));
       }
+      const merged = mergeGeometries(wood);
+      const shadeMerged = mergeGeometries(shades);
+      wood.forEach((g) => g.dispose());
+      shades.forEach((g) => g.dispose());
+      if (merged) frame.add(shadowed(merged, woodMat));
+      if (shadeMerged) frame.add(new THREE.Mesh(shadeMerged, rowShade));
       // A vase or plant where a shelf has room beside its last book. Seeded by the case, so they stay put.
       const choose = rng(hash('decor' + c.index));
       let placed = 0;
@@ -689,7 +736,7 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
       row.forEach(({b, x: bx}, at) => {
         // Older books have yellowed pages; the tint multiplies the paper texture.
         const paper = new THREE.Color(0xffffff).lerp(new THREE.Color(0xe3cf9c), rng(hash(b.id + 'age'))() * 0.9);
-        const pages = () => new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
+        const pages = new THREE.MeshStandardMaterial({map: pagesTex, color: paper, roughness: 0.95});
         const binding = BINDING[bookKind(b)];
         const colors = faceColors(b);
         // Seeded by id, so a book stands the same way after every rebuild.
@@ -697,16 +744,16 @@ export function createShelf(canvas: HTMLCanvasElement, hooks: ShelfHooks): Shelf
         const pull = r() * MAX_PULL;
         const angle = 0.06 + r() * (MAX_LEAN - 0.06);
         const lean = at > 0 && at === row.length - 1 && r() < 0.75 && innerW - 0.1 - (bx + b.w) > 2 * (b.h / 2) * Math.sin(angle) + 0.06 ? angle : 0;
-        // Order follows BoxGeometry faces: +x cover, -x back board, +y, -y, +z spine, -z.
+        // Slots follow packBookFaces: cover, back board, spine, then one material for all three paper faces.
         const mats = [
           new THREE.MeshStandardMaterial({color: colors[0], roughness: 0.6}),
           new THREE.MeshStandardMaterial({color: colors[1], roughness: 0.7}),
-          pages(),
-          pages(),
           new THREE.MeshStandardMaterial({color: colors[2], roughness: binding.gloss}),
-          pages(),
+          pages,
         ];
-        const mesh = new THREE.Mesh(new RoundedBoxGeometry(b.w, b.h, b.d, 2, binding.radius), mats);
+        const geo = new RoundedBoxGeometry(b.w, b.h, b.d, 2, binding.radius);
+        packBookFaces(geo);
+        const mesh = new THREE.Mesh(geo, mats);
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.userData = {id: b.id, mats};
         const grp = new THREE.Group();
